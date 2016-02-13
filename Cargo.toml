@@ -1,0 +1,9 @@
+[package]
+name = "cdimage"
+version = "0.1.0"
+authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
+description = "Generic interface to manipulate various CD image formats"
+
+license = "MIT/Apache-2.0"
+
+[dependencies]
