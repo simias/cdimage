@@ -9,6 +9,7 @@ use formats::Backend;
 pub mod formats;
 pub mod bcd;
 pub mod msf;
+pub mod subchannel;
 
 /// Generic interface for manipulating a CD image. It caches the table
 /// of contents for faster access. It provides a higher level

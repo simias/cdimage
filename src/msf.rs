@@ -1,4 +1,4 @@
-//! CD were originally meant for storing musinc so positions on the
+//! CD were originally meant for storing music so positions on the
 //! disc are stored in "minute:second:frame" format, where frame means
 //! sector.
 //!
@@ -9,21 +9,21 @@ use std::{fmt, cmp, ops};
 
 use super::bcd::Bcd;
 
-/// CD "minute:second:frame" timestamp, given as 3 pairs of *BCD*
-/// encoded bytes. In this context "frame" is
-/// synonymous with "sector".
+/// CD "minute:second:frame" timestamp, given as triplet of *BCD*
+/// encoded bytes. In this context "frame" is synonymous with
+/// "sector".
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Msf(Bcd, Bcd, Bcd);
 
 impl Msf {
-    /// Create a 00:00:00 MSF timestamp
+    /// Create a 00:00:00 MSF
     pub fn zero() -> Msf {
         Msf(Bcd::zero(), Bcd::zero(), Bcd::zero())
     }
 
     /// Build an MSF from a BCD triplet. Returns `None` if `s` is
     /// greater than 0x59 or if `f` is greater than 0x74.
-    pub fn from_bcd(m: Bcd, s: Bcd, f: Bcd) -> Option<Msf> {
+    pub fn new(m: Bcd, s: Bcd, f: Bcd) -> Option<Msf> {
         // Make sure the frame and seconds makes sense (there are only
         // 75 frames per second and obviously 60 seconds per minute)
         if s.bcd() < 0x60 || f.bcd() < 0x75 {
@@ -39,7 +39,7 @@ impl Msf {
     }
 
     /// Convert an MSF into a sector index. In this convention sector
-    /// 0 is 00:00:00 (i.e. before track 01's pregap).
+    /// index 0 is MSF 00:00:00
     pub fn sector_index(self) -> u32 {
         let Msf(m, s, f) = self;
 
@@ -69,7 +69,7 @@ impl Msf {
         let s = Bcd::from_binary(s as u8).unwrap();
         let f = Bcd::from_binary(f as u8).unwrap();
 
-        Some(Msf::from_bcd(m, s, f).unwrap())
+        Some(Msf::new(m, s, f).unwrap())
     }
 
     /// Return the MSF timestamp of the next sector. Returns `None` if
@@ -189,8 +189,8 @@ mod test {
     }
 
     fn msf(m: u8, s: u8, f: u8) -> Msf {
-        Msf::from_bcd(Bcd::from_bcd(m).unwrap(),
-                      Bcd::from_bcd(s).unwrap(),
-                      Bcd::from_bcd(f).unwrap()).unwrap()
+        Msf::new(Bcd::from_bcd(m).unwrap(),
+                 Bcd::from_bcd(s).unwrap(),
+                 Bcd::from_bcd(f).unwrap()).unwrap()
     }
 }
