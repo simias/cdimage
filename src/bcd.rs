@@ -3,6 +3,9 @@
 //! order to make it easier to display those informations on the first
 //! CD players.
 
+use std::str::FromStr;
+use std::fmt;
+
 /// A single packed BCD value in the range 0-99 (2 digits, 4bits per
 /// digit).
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -61,6 +64,26 @@ impl Bcd {
     }
 }
 
+impl FromStr for Bcd {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let b =
+            match u8::from_str(s) {
+                Ok(b) => b,
+                Err(_) => return Err(()),
+            };
+
+        Bcd::from_binary(b).ok_or(())
+    }
+}
+
+impl fmt::Display for Bcd {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:02x}", self.0)
+    }
+}
+
 #[test]
 fn conversions() {
     assert!(Bcd::from_bcd(0) == Some(Bcd(0)));
@@ -74,4 +97,23 @@ fn conversions() {
     assert!(Bcd::from_binary(42) == Some(Bcd(0x42)));
     assert!(Bcd::from_binary(100) == None);
     assert!(Bcd::from_binary(0xff) == None);
+
+}
+
+#[test]
+fn from_str() {
+    assert!(Bcd::from_str("00") == Ok(Bcd(0)));
+    assert!(Bcd::from_str("0") == Ok(Bcd(0)));
+    assert!(Bcd::from_str("4") == Ok(Bcd(4)));
+    assert!(Bcd::from_str("04") == Ok(Bcd(4)));
+    assert!(Bcd::from_str("99") == Ok(Bcd(0x99)));
+    assert!(Bcd::from_str("099") == Ok(Bcd(0x99)));
+    assert!(Bcd::from_str("42") == Ok(Bcd(0x42)));
+
+    assert!(Bcd::from_str("0x00") == Err(()));
+    assert!(Bcd::from_str("0xab") == Err(()));
+    assert!(Bcd::from_str("ab") == Err(()));
+    assert!(Bcd::from_str("100") == Err(()));
+    assert!(Bcd::from_str("0100") == Err(()));
+    assert!(Bcd::from_str("-2") == Err(()));
 }

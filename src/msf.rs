@@ -1,11 +1,12 @@
-//! CD were originally meant for storing music so positions on the
-//! disc are stored in "minute:second:frame" format, where frame means
-//! sector.
+//! Compact discs were originally meant for storing music so positions
+//! on the disc are stored in "minute:second:frame" format, where
+//! frame means sector.
 //!
 //! There are 75 frames/sectors in a second, 60 seconds in a
 //! minute. All three components are stored as BCD.
 
 use std::{fmt, cmp, ops};
+use std::str::FromStr;
 
 use super::bcd::Bcd;
 
@@ -92,8 +93,18 @@ impl Msf {
         None
     }
 
+    /// Checked MSF addition. Computes `self + other`, returning
+    /// `None` if overflow occurred.
+    pub fn checked_add(self, other: Msf) -> Option<Msf> {
+        let a = self.sector_index();
+        let b = other.sector_index();
+
+        Msf::from_sector_index(a + b)
+    }
+
     /// Pack the Msf in a single BCD u32, makes it easier to do
-    /// comparisons
+    /// comparisons without having to do a full decimal conversion
+    /// like `sector_index`.
     fn as_u32_bcd(self) -> u32 {
         let Msf(m, s, f) = self;
 
@@ -105,7 +116,7 @@ impl fmt::Display for Msf {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let Msf(m, s, f) = *self;
 
-        write!(fmt, "{:02x}:{:02x}:{:02x}", m.bcd(), s.bcd(), f.bcd())
+        write!(fmt, "{}:{}:{}", m, s, f)
     }
 }
 
@@ -142,10 +153,47 @@ impl ops::Sub for Msf {
     }
 }
 
+impl ops::Add for Msf {
+    type Output = Msf;
+
+    fn add(self, rhs: Msf) -> Msf {
+        match self.checked_add(rhs) {
+            Some(m) => m,
+            None => panic!("MSF addition overflow: {} + {}", self, rhs),
+        }
+    }
+}
+
+impl FromStr for Msf {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+
+        let mut msf = [Bcd::zero(); 3];
+        let mut count = 0;
+
+        for (i, s) in s.split(':').enumerate() {
+            if i >= 3 {
+                return Err(());
+            }
+
+            count += 1;
+            msf[i] = try!(Bcd::from_str(s));
+        }
+
+        if count != 3 {
+            return Err(());
+        }
+
+        Msf::new(msf[0], msf[1], msf[2]).ok_or(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::Msf;
     use bcd::Bcd;
+    use std::str::FromStr;
 
     #[test]
     fn conversions() {
@@ -186,6 +234,20 @@ mod test {
         let n = msf(0x00, 0x52, 0x10);
 
         assert!(m - n == msf(0x11, 0x41, 0x66));
+    }
+
+    #[test]
+    fn from_str() {
+        assert!(Msf::from_str("00:00:00") == Ok(msf(0x00, 0x00, 0x00)));
+        assert!(Msf::from_str("01:02:03") == Ok(msf(0x01, 0x02, 0x03)));
+        assert!(Msf::from_str("11:12:13") == Ok(msf(0x11, 0x12, 0x13)));
+        assert!(Msf::from_str("99:59:74") == Ok(msf(0x99, 0x59, 0x74)));
+
+        assert!(Msf::from_str("00") == Err(()));
+        assert!(Msf::from_str("00:00") == Err(()));
+        assert!(Msf::from_str("00:00:00:00") == Err(()));
+
+        assert!(Msf::from_str("99:99:99") == Err(()));
     }
 
     fn msf(m: u8, s: u8, f: u8) -> Msf {

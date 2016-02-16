@@ -33,6 +33,8 @@
 use bcd::Bcd;
 use msf::Msf;
 
+use SessionFormat;
+
 /// Common interface shared by all subchannels
 pub trait SubChannel {
     /// Return the raw 12 bytes of subchannel data
@@ -86,19 +88,6 @@ impl SubChannel for SubChannelP {
 }
 
 /// This struct contains the Subchannel Q data of one sector.
-///
-/// The Q subchannel has 3 modes:
-///
-/// * Mode 1: in the lead-in area it contains the table of contents
-/// for the session. Elsewhere it contains the timing information for
-/// the current track.
-///
-/// * Mode 2: the Q subchannel contains the Media Catalog Number (MCN)
-/// of the disc.
-///
-/// * Mode 3: the Q subchannels contains the International Standard
-/// Recording Code (ISRC) of the current track. This mode only makes
-/// sense for audio tracks.
 pub struct SubChannelQ {
     /// Raw contents
     bytes: [u8; 12],
@@ -113,17 +102,21 @@ impl SubChannelQ {
         }
     }
 
-    /// Return true if this is a data track
+    /// Return true if this is a data track. For table of content
+    /// sectors this flag applies to the target track.
     pub fn data(&self) -> bool {
         self.bytes[0] & 0x40 != 0
     }
 
-    /// Return true if this is an audio track
+    /// Return true if this is an audio track. For table of content
+    /// sectors this flag applies to the target track.
     pub fn audio(&self) -> bool {
         !self.data()
     }
 
-    /// Return true if the "digital copy permitted" flag is set
+    /// Return true if the "digital copy permitted" flag is set. For
+    /// table of content sectors this flag applies to the target
+    /// track.
     pub fn digital_copy_permitted(&self) -> bool {
         self.bytes[0] & 0x20 != 0
     }
@@ -146,8 +139,9 @@ impl SubChannelQ {
     /// Retrieve the mode of the data specified by this
     /// Q-subchannel.
     ///
-    /// The standard specifies three modes: 1, 2 and 3. Mode 3 only
-    /// makes sense for audio tracks.
+    /// The Q subchannel has several modes (see section 5.4.3 of
+    /// ECMA-395). Mode 1 is used to store the table of content in the
+    /// lead-in and timing information elsewhere.
     ///
     /// This field is specified over 4 bits so theoretically 16
     /// different modes are possible.
@@ -300,6 +294,8 @@ pub enum QData {
     /// * Track number
     /// * Index
     /// * MSF of this sector relative to the beginning of the track
+    ///   (index 01). In the prepap (index 00) it decreases until it
+    ///   reaches index 01 at 00:00:00.
     /// * MSF of this sector relative to the beginning of the user
     ///   data area. This is *not* an absolute MSF, you have to add 2
     ///   minutes (150 sectors) to get an absolute MSF.
@@ -329,19 +325,6 @@ pub enum QData {
     /// Unsupported or corrupted data. Use `Subchannel::raw()` if you
     /// want to access the raw data directly for further processing.
     Unsupported,
-}
-
-/// List of the various supported session formats.
-pub enum SessionFormat {
-    /// CD-DA (audio CD, "red book" specification) or CD-ROM ("yellow
-    /// book" specification) session
-    CddaCdRom,
-    /// CD-i (compact disc interactive, "green book"
-    /// specification). Used on Philips' CD-i console.
-    Cdi,
-    /// CD-ROM XA (extended architecture). Used on Sony's PlayStation
-    /// console.
-    Cdxa,
 }
 
 /// This struct is used for subchannels where no special handling is
