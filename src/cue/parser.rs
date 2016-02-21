@@ -293,7 +293,9 @@ impl CueParser {
                                track_number,
                                track_format,
                                0,
-                               Storage::Bin(bin_index, self.consumed_bytes));
+                               Storage::Bin(bin_index,
+                                            self.consumed_bytes,
+                                            track_type));
 
         self.indices.push(index);
         self.index_type = Some(track_type);

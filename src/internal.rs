@@ -18,7 +18,7 @@ use CdError;
 pub struct Index<T> {
     /// Sector pointed at by this index. Stored as an absolute sector
     /// index.
-    start: u32,
+    sector_index: u32,
     /// Index number
     index: Bcd,
     /// Track number this index belongs to
@@ -40,13 +40,24 @@ impl<T> Index<T> {
                session: u8,
                private: T) -> Index<T> {
         Index {
-            start: start.sector_index(),
+            sector_index: start.sector_index(),
             index: index,
             track: track,
             format: format,
             session: session,
             private: private,
         }
+    }
+
+    /// Retrieve the absolute `sector_index` of the sector referenced
+    /// by this index
+    pub fn sector_index(&self) -> u32 {
+        self.sector_index
+    }
+
+    /// Retrieve the MSF of the sector referenced by this index
+    pub fn msf(&self) -> Msf {
+        Msf::from_sector_index(self.sector_index).unwrap()
     }
 
     /// Retrieve a reference to the `private` data
@@ -58,11 +69,36 @@ impl<T> Index<T> {
     pub fn private_mut(&mut self) -> &mut T {
         &mut self.private
     }
+
+    /// Retrieve the index number in BCD
+    pub fn index(&self) -> Bcd {
+        self.index
+    }
+
+    /// Retrieve the track number in BCD
+    pub fn track(&self) -> Bcd {
+        self.track
+    }
+
+    /// Retrieve the format of the track containing this index
+    pub fn format(&self) -> TrackFormat {
+        self.format
+    }
+
+    /// Retrieve the session number
+    pub fn session(&self) -> u8 {
+        self.session
+    }
+
+    /// Return `true` if the index number is 0
+    pub fn is_pregap(&self) -> bool {
+        self.index.bcd() == 0
+    }
 }
 
 impl<T> cmp::PartialEq for Index<T> {
     fn eq(&self, other: &Index<T>) -> bool {
-        self.start == other.start
+        self.sector_index == other.sector_index
     }
 }
 
@@ -71,13 +107,13 @@ impl<T> cmp::Eq for Index<T> {
 
 impl<T> cmp::PartialOrd for Index<T> {
     fn partial_cmp(&self, other: &Index<T>) -> Option<cmp::Ordering> {
-        self.start.partial_cmp(&other.start)
+        self.sector_index.partial_cmp(&other.sector_index)
     }
 }
 
 impl<T> Ord for Index<T> {
     fn cmp(&self, other: &Index<T>) -> cmp::Ordering {
-        self.start.cmp(&other.start)
+        self.sector_index.cmp(&other.sector_index)
     }
 }
 
@@ -107,6 +143,17 @@ impl<T> IndexCache<T> {
         // Make sure the list is sorted
         indices.sort();
 
+        {
+            let index0 = &indices[0];
+
+            if index0.sector_index != 0 {
+                let error =
+                    format!("Track 01's pregap starts at {}", index0.msf());
+
+                return Err(CdError::BadImage(file, error));
+            }
+        }
+
         // TODO: Add more validation here.
 
         Ok(IndexCache {
@@ -118,6 +165,57 @@ impl<T> IndexCache<T> {
     /// Return the MSF of the first sector in the lead out.
     pub fn lead_out(&self) -> Msf {
         Msf::from_sector_index(self.lead_out).unwrap()
+    }
+
+    /// Return a reference to the index at position `pos` or `None` if
+    /// it's out of bounds
+    pub fn get(&self, pos: usize) -> Option<&Index<T>> {
+        self.indices.get(pos)
+    }
+
+    /// Locate the index directly before `msf` and return its
+    /// position along with a reference to the `Index` struct.
+    pub fn find_index_for_msf(&self, msf: Msf) -> Option<(usize, &Index<T>)> {
+        let sector = msf.sector_index();
+
+        if sector >= self.lead_out {
+            return None;
+        }
+
+        let pos =
+            match self.indices.binary_search_by(
+                |index| index.sector_index.cmp(&sector)) {
+                // The MSF matched an index exactly
+                Ok(i) => i,
+                // No exact match, the function returns the index of
+                // the first element greater than `sector` (on one
+                // past the end if no greater element is found).
+                Err(i) => i - 1,
+            };
+
+        Some((pos, &self.indices[pos]))
+    }
+
+    /// Locate `index` for `track` and return its position along with
+    /// a reference to the `Index` struct.
+    pub fn find_index_for_track(&self,
+                                track: Bcd,
+                                index: Bcd) -> Option<(usize, &Index<T>)> {
+        match self.indices.binary_search_by(
+            |idx| match idx.track().cmp(&track) {
+                cmp::Ordering::Equal => idx.index().cmp(&index),
+                o => o,
+            }) {
+            Ok(i) => Some((i, &self.indices[i])),
+            Err(_) => None,
+        }
+    }
+
+    /// Locate index1 for `track` and return its position along with a
+    /// reference to the `Index` struct.
+    pub fn find_index1_for_track(&self,
+                                 track: Bcd) -> Option<(usize, &Index<T>)> {
+        self.find_index_for_track(track, Bcd::one())
     }
 }
 
@@ -140,9 +238,7 @@ impl<T> fmt::Debug for IndexCache<T> {
                 force_display = false;
             }
 
-            try!(writeln!(f, "    Index {}: {}",
-                          i.index,
-                          Msf::from_sector_index(i.start).unwrap()));
+            try!(writeln!(f, "    Index {}: {}", i.index, i.msf()));
         }
 
         writeln!(f, "Lead-out: {}", self.lead_out())

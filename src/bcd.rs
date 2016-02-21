@@ -8,7 +8,7 @@ use std::fmt;
 
 /// A single packed BCD value in the range 0-99 (2 digits, 4bits per
 /// digit).
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Bcd(u8);
 
 impl Bcd {
@@ -35,6 +35,11 @@ impl Bcd {
     /// Return a BCD equal to 0
     pub fn zero() -> Bcd {
         Bcd(0)
+    }
+
+    /// Return a BCD equal to 1
+    pub fn one() -> Bcd {
+        Bcd(1)
     }
 
     /// Returns the BCD as an u8
