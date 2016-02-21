@@ -4,6 +4,9 @@
 
 #![warn(missing_docs)]
 
+#[macro_use]
+extern crate bitflags;
+
 use std::path::PathBuf;
 use std::io;
 use std::fmt;
@@ -12,6 +15,7 @@ pub mod bcd;
 pub mod msf;
 pub mod subchannel;
 pub mod internal;
+pub mod sector;
 pub mod cue;
 
 /// Abstract read-only interface to an image format
