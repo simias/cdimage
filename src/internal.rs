@@ -49,6 +49,11 @@ impl<T> Index<T> {
         }
     }
 
+    /// Retrieve the MSF pointed at by this index
+    pub fn msf(&self) -> Msf {
+        Msf::from_sector_index(self.start).unwrap()
+    }
+
     /// Retrieve a reference to the `private` data
     pub fn private(&self) -> &T {
         &self.private
@@ -57,6 +62,21 @@ impl<T> Index<T> {
     /// Retrieve a mutable reference to the `private` data
     pub fn private_mut(&mut self) -> &mut T {
         &mut self.private
+    }
+
+    /// Retrieve the index number in BCD
+    pub fn index(&self) -> Bcd {
+        self.index
+    }
+
+    /// Retrieve the track number in BCD
+    pub fn track(&self) -> Bcd {
+        self.track
+    }
+
+    /// Return `true` if the index number is 0
+    pub fn is_pregap(&self) -> bool {
+        self.index.bcd() == 0
     }
 }
 
@@ -107,6 +127,17 @@ impl<T> IndexCache<T> {
         // Make sure the list is sorted
         indices.sort();
 
+        {
+            let index0 = &indices[0];
+
+            if index0.start != 0 {
+                let error =
+                    format!("Track 01's pregap starts at {}", index0.msf());
+
+                return Err(CdError::BadImage(file, error));
+            }
+        }
+
         // TODO: Add more validation here.
 
         Ok(IndexCache {
@@ -118,6 +149,57 @@ impl<T> IndexCache<T> {
     /// Return the MSF of the first sector in the lead out.
     pub fn lead_out(&self) -> Msf {
         Msf::from_sector_index(self.lead_out).unwrap()
+    }
+
+    /// Return a reference to the index at position `pos` or `None` if
+    /// it's out of bounds
+    pub fn get(&self, pos: usize) -> Option<&Index<T>> {
+        self.indices.get(pos)
+    }
+
+    /// Locate the index directly before `msf` and return its
+    /// position along with a reference to the `Index` struct.
+    pub fn find_index_for_msf(&self, msf: Msf) -> Option<(usize, &Index<T>)> {
+        let sector = msf.sector_index();
+
+        if sector >= self.lead_out {
+            return None;
+        }
+
+        let pos =
+            match self.indices.binary_search_by(|index|
+                                                index.start.cmp(&sector)) {
+                // The MSF matched an index exactly
+                Ok(i) => i,
+                // No exact match, the function returns the index of
+                // the first element greater than `sector` (on one
+                // past the end if no greater element is found).
+                Err(i) => i - 1,
+            };
+
+        Some((pos, &self.indices[pos]))
+    }
+
+    /// Locate `index` for `track` and return its position along with
+    /// a reference to the `Index` struct.
+    pub fn find_index_for_track(&self,
+                                track: Bcd,
+                                index: Bcd) -> Option<(usize, &Index<T>)> {
+        match self.indices.binary_search_by(
+            |idx| match idx.track().cmp(&track) {
+                cmp::Ordering::Equal => idx.index().cmp(&index),
+                o => o,
+            }) {
+            Ok(i) => Some((i, &self.indices[i])),
+            Err(_) => None,
+        }
+    }
+
+    /// Locate index1 for `track` and return its position along with a
+    /// reference to the `Index` struct.
+    pub fn find_index1_for_track(&self,
+                                 track: Bcd) -> Option<(usize, &Index<T>)> {
+        self.find_index_for_track(track, Bcd::one())
     }
 }
 
@@ -140,9 +222,7 @@ impl<T> fmt::Debug for IndexCache<T> {
                 force_display = false;
             }
 
-            try!(writeln!(f, "    Index {}: {}",
-                          i.index,
-                          Msf::from_sector_index(i.start).unwrap()));
+            try!(writeln!(f, "    Index {}: {}", i.index, i.msf()));
         }
 
         writeln!(f, "Lead-out: {}", self.lead_out())

@@ -39,6 +39,15 @@ pub struct Sector {
 }
 
 impl Sector {
+    /// Return a mutable reference to 2352 byte sector data
+    pub fn data_2352_mut(&mut self) -> &mut [u8; 2352] {
+        &mut self.data
+    }
+
+    /// Set which parts of the sector data are currently valid
+    pub fn set_ready(&mut self, ready: DataReady) {
+        self.ready = ready
+    }
 
     /// Retreive the entire sector data (except for the subchannel
     /// data).

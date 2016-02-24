@@ -10,6 +10,8 @@ extern crate bitflags;
 use std::path::PathBuf;
 use std::io;
 use std::fmt;
+use sector::Sector;
+use msf::Msf;
 
 pub mod bcd;
 pub mod msf;
@@ -24,6 +26,9 @@ pub trait Image {
     /// human-readable way. If the backend is daisy-chained it should
     /// mention the underlying image format as well.
     fn image_format(&self) -> String;
+
+    /// Read a single sector at the given MSF
+    fn read_sector(&mut self, &mut Sector, Msf) -> Result<(), CdError>;
 }
 
 /// Possible session formats.
@@ -57,6 +62,8 @@ pub enum TrackFormat {
 /// Error type for disc operations.
 #[derive(Debug)]
 pub enum CdError {
+    /// Attempted to access a sector past the end of the CD
+    LeadOut,
     /// Unexpected or corrupted image format. Contains the path of the
     /// file and the line where the error occured and a string
     /// describing the problem in a human-readble way.

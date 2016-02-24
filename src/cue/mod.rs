@@ -13,6 +13,8 @@ use std::fs::File;
 use CdError;
 use Image;
 use internal::IndexCache;
+use sector::Sector;
+use msf::Msf;
 
 use self::parser::CueParser;
 
@@ -39,6 +41,50 @@ impl Cue {
 impl Image for Cue {
     fn image_format(&self) -> String {
         "CUE".to_string()
+    }
+
+    fn read_sector(&mut self,
+                   sector: &mut Sector,
+                   msf: Msf) -> Result<(), CdError> {
+        let (pos, index) =
+            match self.indices.find_index_for_msf(msf) {
+                Some(i) => i,
+                None => return Err(CdError::LeadOut),
+            };
+
+        // First we compute the relative track MSF
+        let track_msf =
+            if index.is_pregap() {
+                // In the pregap the track MSF decreases until index1
+                // is reached
+                let index1 =
+                    match self.indices.get(pos + 1) {
+                        Some(i) => i,
+                        None => panic!("Pregap without index 1!"),
+                    };
+
+                index1.msf() - msf
+            } else {
+                // The track MSF is relative to index1
+                let index1 =
+                    if index.index().bcd() == 0x01 {
+                        index
+                    } else {
+                        match self.indices
+                            .find_index1_for_track(index.track()) {
+                                Some((_, i)) => i,
+                                // Shouldn't be reached, should be
+                                // caught by IndexCache's constructor
+                                None =>
+                                    panic!("Missing index 1 for track {}",
+                                           index.track()),
+                            }
+                    };
+
+                msf - index1.msf()
+            };
+
+        Ok(())
     }
 }
 
