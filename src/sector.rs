@@ -9,9 +9,8 @@ use bcd::Bcd;
 /// Sector metadata, contains informations about the position and
 /// format of a given sector.
 pub struct Metadata {
-    /// Absolute position of the sector. Stored as a sector index
-    /// since it's often used by comparisons and it's faster that way.
-    pub msf: u32,
+    /// Absolute MSF of the sector
+    pub msf: Msf,
     /// Relative MSF within the current track (decrements in the
     /// pregap/index0)
     pub track_msf: Msf,
@@ -39,14 +38,20 @@ pub struct Sector {
 }
 
 impl Sector {
-    /// Return a mutable reference to 2352 byte sector data
-    pub fn data_2352_mut(&mut self) -> &mut [u8; 2352] {
-        &mut self.data
-    }
-
-    /// Set which parts of the sector data are currently valid
-    pub fn set_ready(&mut self, ready: DataReady) {
-        self.ready = ready
+    /// Create a new empty sector
+    pub fn empty() -> Sector {
+        Sector {
+            ready: DataReady::empty(),
+            data: [0; 2352],
+            metadata: Metadata {
+                msf: Msf::zero(),
+                track_msf: Msf::zero(),
+                index: Bcd::zero(),
+                track: Bcd::zero(),
+                format: TrackFormat::Audio,
+                session: 0,
+            },
+        }
     }
 
     /// Retreive the entire sector data (except for the subchannel
@@ -81,5 +86,46 @@ bitflags! {
         /// The entire 2352 bytes of sector data (everything except
         /// for the subchannel data)
         const DATA_2352 = HEADER.bits | PAYLOAD.bits | ECM.bits,
+        /// Set when the metadata is valid
+        const METADATA  = 0b00001000,
+    }
+}
+
+
+/// Interface used to build a new sector "in place" to avoid copying
+/// sector data around.
+pub struct SectorBuilder<'a> {
+    sector: &'a mut Sector,
+}
+
+impl<'a> SectorBuilder<'a> {
+    /// Create a new SectorBuilder using `sector` for storage. The
+    /// contents of `sector` will be reset.
+    pub fn new(sector: &mut Sector) -> SectorBuilder {
+        sector.ready = DataReady::empty();
+
+        SectorBuilder {
+            sector: sector,
+        }
+    }
+
+    /// Load up the full 2352 bytes of sector data. The `loader`
+    /// function will be called with a mutable reference to the sector
+    /// data. If the `loader` callback returns an error the sector
+    /// data won't be tagged as valid.
+    pub fn set_data_2352<F, E>(&mut self, loader: F) -> Result<(), E>
+        where F: FnOnce(&mut [u8; 2352]) -> Result<(), E> {
+
+        try!(loader(&mut self.sector.data));
+
+        self.sector.ready.insert(DATA_2352);
+
+        Ok(())
+    }
+
+    /// Set the metadata for the sector
+    pub fn set_metadata(&mut self, metadata: Metadata) {
+        self.sector.metadata = metadata;
+        self.sector.ready.insert(METADATA);
     }
 }

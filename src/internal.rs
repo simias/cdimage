@@ -18,7 +18,7 @@ use CdError;
 pub struct Index<T> {
     /// Sector pointed at by this index. Stored as an absolute sector
     /// index.
-    start: u32,
+    sector_index: u32,
     /// Index number
     index: Bcd,
     /// Track number this index belongs to
@@ -40,7 +40,7 @@ impl<T> Index<T> {
                session: u8,
                private: T) -> Index<T> {
         Index {
-            start: start.sector_index(),
+            sector_index: start.sector_index(),
             index: index,
             track: track,
             format: format,
@@ -49,9 +49,15 @@ impl<T> Index<T> {
         }
     }
 
-    /// Retrieve the MSF pointed at by this index
+    /// Retrieve the absolute `sector_index` of the sector referenced
+    /// by this index
+    pub fn sector_index(&self) -> u32 {
+        self.sector_index
+    }
+
+    /// Retrieve the MSF of the sector referenced by this index
     pub fn msf(&self) -> Msf {
-        Msf::from_sector_index(self.start).unwrap()
+        Msf::from_sector_index(self.sector_index).unwrap()
     }
 
     /// Retrieve a reference to the `private` data
@@ -74,6 +80,16 @@ impl<T> Index<T> {
         self.track
     }
 
+    /// Retrieve the format of the track containing this index
+    pub fn format(&self) -> TrackFormat {
+        self.format
+    }
+
+    /// Retrieve the session number
+    pub fn session(&self) -> u8 {
+        self.session
+    }
+
     /// Return `true` if the index number is 0
     pub fn is_pregap(&self) -> bool {
         self.index.bcd() == 0
@@ -82,7 +98,7 @@ impl<T> Index<T> {
 
 impl<T> cmp::PartialEq for Index<T> {
     fn eq(&self, other: &Index<T>) -> bool {
-        self.start == other.start
+        self.sector_index == other.sector_index
     }
 }
 
@@ -91,13 +107,13 @@ impl<T> cmp::Eq for Index<T> {
 
 impl<T> cmp::PartialOrd for Index<T> {
     fn partial_cmp(&self, other: &Index<T>) -> Option<cmp::Ordering> {
-        self.start.partial_cmp(&other.start)
+        self.sector_index.partial_cmp(&other.sector_index)
     }
 }
 
 impl<T> Ord for Index<T> {
     fn cmp(&self, other: &Index<T>) -> cmp::Ordering {
-        self.start.cmp(&other.start)
+        self.sector_index.cmp(&other.sector_index)
     }
 }
 
@@ -130,7 +146,7 @@ impl<T> IndexCache<T> {
         {
             let index0 = &indices[0];
 
-            if index0.start != 0 {
+            if index0.sector_index != 0 {
                 let error =
                     format!("Track 01's pregap starts at {}", index0.msf());
 
@@ -167,8 +183,8 @@ impl<T> IndexCache<T> {
         }
 
         let pos =
-            match self.indices.binary_search_by(|index|
-                                                index.start.cmp(&sector)) {
+            match self.indices.binary_search_by(
+                |index| index.sector_index.cmp(&sector)) {
                 // The MSF matched an index exactly
                 Ok(i) => i,
                 // No exact match, the function returns the index of

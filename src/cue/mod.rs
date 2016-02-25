@@ -9,11 +9,12 @@
 
 use std::path::Path;
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 
 use CdError;
 use Image;
 use internal::IndexCache;
-use sector::Sector;
+use sector::{Sector, SectorBuilder, Metadata};
 use msf::Msf;
 
 use self::parser::CueParser;
@@ -84,6 +85,49 @@ impl Image for Cue {
                 msf - index1.msf()
             };
 
+        let mut builder = SectorBuilder::new(sector);
+
+        // First let's read the sector data
+        match index.private() {
+            &Storage::Bin(bin, offset, ty) => {
+                let bin = &mut self.bin_files[bin as usize];
+
+                // For now we only support "simple sector" format
+                if ty.sector_size() != 2352 {
+                    panic!("Unimplemented CUE track type: {:?}", ty);
+                }
+
+                let index_offset = ty.sector_size() as u64 *
+                    (msf.sector_index() - index.sector_index()) as u64;
+
+                let offset = offset + index_offset;
+
+                let res =
+                    builder.set_data_2352(|data| {
+                        try!(bin.file.seek(SeekFrom::Start(offset)));
+
+                        bin.file.read_exact(data)
+                    });
+
+                if let Err(e) = res {
+                    return Err(CdError::IoError(e));
+                }
+            }
+            &Storage::PreGap =>
+                panic!("Unhandled CUE pregap read"),
+        }
+
+        // Now let's fill up the metadata
+        builder.set_metadata(
+            Metadata {
+                msf: msf,
+                track_msf: track_msf,
+                index: index.index(),
+                track: index.track(),
+                format: index.format(),
+                session: index.session(),
+            });
+
         Ok(())
     }
 }
@@ -128,7 +172,7 @@ impl CueTrackType {
 enum Storage {
     /// The slice is stored in a portion of a BIN file. Contains the
     /// index of the BIN file and the offset in the file.
-    Bin(u32, u64),
+    Bin(u32, u64, CueTrackType),
     /// The slice is a pre-gap, it's not stored in the BIN file and
     /// must be regererated.
     PreGap,
@@ -140,9 +184,6 @@ enum Storage {
 struct BinaryBlob {
     /// BIN file
     file: File,
-    /// Current position within the file, used to avoid needless
-    /// seeks.
-    pos: u64,
 }
 
 impl BinaryBlob {
@@ -156,7 +197,6 @@ impl BinaryBlob {
 
         Ok(BinaryBlob {
             file: file,
-            pos: 0
         })
     }
 }
