@@ -70,15 +70,58 @@ impl Sector {
     pub fn metadata(&self) -> &Metadata {
         &self.metadata
     }
+
+    /// Retrieve the CD-ROM XA Mode2 subheader. Returns
+    /// `CdError::BadFormat` if this is not a CD-ROM XA sector.
+    pub fn mode2_xa_subheader(&self) -> Result<XaSubHeader, CdError> {
+        // Should we allow CDi tracks as well? Probably, but it's not
+        // like I have a CDi image to test at the moment...
+        if self.metadata.format != TrackFormat::Mode2Xa {
+            return Err(CdError::BadFormat);
+        }
+
+        // The subheader is at the beginning of the payload
+        if !self.ready.contains(PAYLOAD) {
+            // Should we really support this case? Which image format
+            // could leave us in this state?
+            panic!("Missing payload for a track!");
+        }
+
+        Ok(XaSubHeader::new(array_ref![self.data, 16, 8]))
+    }
+
+    /// Retrieve a CD-ROM XA Mode 2 Form 1 2048 byte payload. Returns
+    /// `CdError::BadFormat` if this sector doesn't have the correct
+    /// format.
+    pub fn mode2_xa_form1_payload(&self) -> Result<&[u8; 2048], CdError> {
+        let form1 = try!(self.mode2_xa_subheader()).form1();
+
+        if !form1 {
+            return Err(CdError::BadFormat);
+        }
+
+        Ok(array_ref!(self.data, 24, 2048))
+    }
 }
 
 bitflags! {
     /// Bitflag holding the data ready to be read from the sector.
     flags DataReady: u8 {
-        /// Sector header for CD-ROM and CDi data tracks.
+        /// 16byte sector header for CD-ROM and CDi data
+        /// tracks. Contains the sync pattern, MSF and mode of the
+        /// sector. Some image formats don't store this information
+        /// since it can be reconstructed easily.
         const HEADER    = 0b00000001,
         /// Sector data without the header and error
-        /// detection/correction bits.
+        /// detection/correction bits. The actual portion of the
+        /// sector this represents varies depends on the sector
+        /// format. For CD-ROM XA and CD-i Mode 2 the subheader is
+        /// considered to be part of the payload.
+        ///
+        /// Maybe this flag is useless, could there be any situation
+        /// where this won't be set? Arguably we won't be able to get
+        /// the payload in certain image formats (pregap in CUEs for
+        /// instance) but then we can just fill them with zeroes?
         const PAYLOAD   = 0b00000010,
         /// Error detection and correction bits (if applicable, always
         /// set for audio tracks).
@@ -91,6 +134,45 @@ bitflags! {
     }
 }
 
+/// Mode 2 XA sub-header (from the CDi "green book"):
+///
+///   byte 0: File number
+///   byte 1: Channel number
+///   byte 2: Submode
+///   byte 3: Coding information
+///   byte 4: File number
+///   byte 5: Channel number
+///   byte 6: Submode
+///   byte 7: Coding information
+///
+/// The subheader starts at byte 16 of CD-ROM XA sectors, just after
+/// the CD-ROM header.
+pub struct XaSubHeader {
+    subheader: [u8; 8],
+}
+
+impl XaSubHeader {
+    /// Create a new XaSubHeader instance from the 8 bytes of
+    /// `subheader` data.
+    pub fn new(subheader: &[u8; 8]) -> XaSubHeader {
+        XaSubHeader {
+            subheader: *subheader,
+        }
+    }
+
+    /// Return `true` if this sector is in Form 1 (2048 bytes of
+    /// payload, 276 bytes of error correction, 4 bytes of error
+    /// detection)
+    pub fn form1(&self) -> bool {
+        !self.form2()
+    }
+
+    /// Return `true` if this sector is in Form 2 (no error
+    /// correction, 2324 bytes of payload)
+    pub fn form2(&self) -> bool {
+        self.subheader[2] & 0x20 != 0
+    }
+}
 
 /// Interface used to build a new sector "in place" to avoid copying
 /// sector data around.

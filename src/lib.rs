@@ -6,6 +6,8 @@
 
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate arrayref;
 
 use std::path::PathBuf;
 use std::io;
@@ -62,6 +64,9 @@ pub enum TrackFormat {
 /// Error type for disc operations.
 #[derive(Debug)]
 pub enum CdError {
+    /// Format missmatch. For instance when one attempts to retrieve
+    /// CD-ROM payloads on an audio track.
+    BadFormat,
     /// Attempted to access a sector past the end of the CD
     LeadOut,
     /// Unexpected or corrupted image format. Contains the path of the

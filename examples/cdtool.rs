@@ -46,7 +46,7 @@ fn hexdump(bytes: &[u8]) {
 
     let mut pos = 0;
 
-    while pos + 16 < bytes.len() {
+    while pos + 16 <= bytes.len() {
         let bytes = &bytes[pos..pos+16];
 
         print!("{:08x}  ", pos);
