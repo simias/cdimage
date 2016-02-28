@@ -34,6 +34,31 @@ impl Msf {
         }
     }
 
+    /// Convenience function to build an MSF from BCD values stored in
+    /// an `u8`. Returns none if one of the values is not valid BCD of
+    /// if it's not a valid Msf
+    pub fn from_bcd(m: u8, s: u8, f: u8) -> Option<Msf> {
+        let m =
+            match Bcd::from_bcd(m) {
+                Some(b) => b,
+                None => return None,
+            };
+
+        let s =
+            match Bcd::from_bcd(s) {
+                Some(b) => b,
+                None => return None,
+            };
+
+        let f =
+            match Bcd::from_bcd(f) {
+                Some(b) => b,
+                None => return None,
+            };
+
+        Msf::new(m, s, f)
+    }
+
     /// Return the internal BCD triplet
     pub fn into_bcd(self) -> (Bcd, Bcd, Bcd) {
         (self.0, self.1, self.2)

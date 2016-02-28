@@ -21,6 +21,7 @@ pub mod subchannel;
 pub mod internal;
 pub mod sector;
 pub mod cue;
+pub mod crc;
 
 /// Abstract read-only interface to an image format
 pub trait Image {
