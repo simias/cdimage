@@ -90,17 +90,22 @@ impl Sector {
         Ok(XaSubHeader::new(array_ref![self.data, 16, 8]))
     }
 
-    /// Retrieve a CD-ROM XA Mode 2 Form 1 2048 byte payload. Returns
-    /// `CdError::BadFormat` if this sector doesn't have the correct
-    /// format.
-    pub fn mode2_xa_form1_payload(&self) -> Result<&[u8; 2048], CdError> {
-        let form1 = try!(self.mode2_xa_subheader()).form1();
+    /// Retrieve a CD-ROM XA Mode 2 payload. Returns
+    /// `CdError::BadFormat` if this is not a Mode 2 sector.
+    ///
+    /// For Form 1 tracks the slice returned will be either be 2048 or
+    /// 2324 bytes long depending on whether the sector is form 1 or
+    /// form 2 respectively.
+    pub fn mode2_xa_payload(&self) -> Result<&[u8], CdError> {
+        let subheader = try!(self.mode2_xa_subheader());
 
-        if !form1 {
-            return Err(CdError::BadFormat);
-        }
+        let payload =
+            match subheader.form() {
+                XaForm::Form1 => &self.data[24..2072],
+                XaForm::Form2 => &self.data[24..2348],
+            };
 
-        Ok(array_ref!(self.data, 24, 2048))
+        Ok(payload)
     }
 }
 
@@ -160,18 +165,30 @@ impl XaSubHeader {
         }
     }
 
-    /// Return `true` if this sector is in Form 1 (2048 bytes of
-    /// payload, 276 bytes of error correction, 4 bytes of error
-    /// detection)
-    pub fn form1(&self) -> bool {
-        !self.form2()
+    /// Return "form" of this sector
+    pub fn form(&self) -> XaForm {
+        match self.subheader[2] & 0x20 != 0 {
+            false => XaForm::Form1,
+            true  => XaForm::Form2,
+        }
     }
+}
 
-    /// Return `true` if this sector is in Form 2 (no error
-    /// correction, 2324 bytes of payload)
-    pub fn form2(&self) -> bool {
-        self.subheader[2] & 0x20 != 0
-    }
+/// CD-ROM XA Mode 2 sectors have two possible forms (advertised in
+/// the subheader)
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum XaForm {
+    /// Mode 2 Form 1: 2048 bytes of data, 4 bytes of error detection
+    /// and 276 bytes of error correction
+    Form1,
+    /// Mode 2 Form 2: 2324 bytes of data, 4 bytes of "quality
+    /// control".
+    ///
+    /// The CDi spec says that those bytes are reserved and ignored by
+    /// the system and *recommends* to use the same algorithm as for
+    /// the Form 1 error detection code. It's also possible to leave
+    /// it to zero if unused...
+    Form2,
 }
 
 /// Interface used to build a new sector "in place" to avoid copying
