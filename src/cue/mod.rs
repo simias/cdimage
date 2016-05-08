@@ -117,8 +117,6 @@ impl Image for Cue {
                 panic!("Unhandled CUE pregap read"),
         }
 
-        println!("cue format: {:?}", index.format());
-
         // Now let's fill up the metadata
         builder.set_metadata(
             Metadata {
