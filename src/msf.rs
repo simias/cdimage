@@ -13,7 +13,7 @@ use super::bcd::Bcd;
 /// CD "minute:second:frame" timestamp, given as triplet of *BCD*
 /// encoded bytes. In this context "frame" is synonymous with
 /// "sector".
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 pub struct Msf(Bcd, Bcd, Bcd);
 
 impl Msf {

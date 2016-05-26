@@ -9,6 +9,8 @@ extern crate bitflags;
 #[macro_use]
 extern crate arrayref;
 
+extern crate rustc_serialize;
+
 use std::path::PathBuf;
 use std::io;
 use std::fmt;
@@ -35,6 +37,7 @@ pub trait Image {
 }
 
 /// Possible session formats.
+#[derive(PartialEq, Eq, Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
 pub enum SessionFormat {
     /// CD-DA (audio CD, "red book" specification) or CD-ROM ("yellow
     /// book" specification) session
@@ -48,7 +51,7 @@ pub enum SessionFormat {
 }
 
 /// Possible track types
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
 pub enum TrackFormat {
     /// CD-DA audio track (red book audio)
     Audio,

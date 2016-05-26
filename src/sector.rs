@@ -1,5 +1,7 @@
 //! CD sector interface.
 
+use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+
 use CdError;
 use TrackFormat;
 
@@ -8,6 +10,7 @@ use bcd::Bcd;
 
 /// Sector metadata, contains informations about the position and
 /// format of a given sector.
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct Metadata {
     /// Absolute MSF of the sector
     pub msf: Msf,
@@ -109,8 +112,73 @@ impl Sector {
     }
 }
 
+impl Encodable for Sector {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+
+        s.emit_struct("Sector", 3, |s| {
+            try!(s.emit_struct_field("ready", 0,
+                                     |s| self.ready.encode(s)));
+
+            try!(s.emit_struct_field(
+                "data", 1,
+                |s| s.emit_seq(
+                    2352,
+                    |s| {
+                        for (i, &b) in self.data.iter().enumerate() {
+                            try!(s.emit_seq_elt(i, |s| b.encode(s)))
+                        }
+
+                        Ok(())
+                    })));
+
+            try!(s.emit_struct_field("metadata", 2,
+                                     |s| self.metadata.encode(s)));
+
+
+            Ok(())
+        })
+    }
+}
+
+impl Decodable for Sector {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Sector, D::Error> {
+        d.read_struct("ImageBuffer", 3, |d| {
+            let mut sector = Sector::empty();
+
+            sector.ready =
+                try!(d.read_struct_field("ready", 0,
+                                         Decodable::decode));
+
+            try!(d.read_struct_field(
+                    "data", 1,
+                    |d| {
+                        d.read_seq(|d, len| {
+                            if len != 2352 {
+                                return Err(
+                                    d.error("wrong sector data length"));
+                            }
+
+                            for i in 0..len {
+                                sector.data[i] =
+                                    try!(d.read_seq_elt(i, Decodable::decode));
+                            }
+
+                            Ok(len)
+                        })
+                    }));
+
+            sector.metadata =
+                try!(d.read_struct_field("metadata", 2,
+                                         Decodable::decode));
+
+            Ok(sector)
+        })
+    }
+}
+
 bitflags! {
     /// Bitflag holding the data ready to be read from the sector.
+    #[derive(RustcDecodable, RustcEncodable)]
     flags DataReady: u8 {
         /// 16byte sector header for CD-ROM and CDi data
         /// tracks. Contains the sync pattern, MSF and mode of the
