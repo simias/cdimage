@@ -142,7 +142,7 @@ impl Encodable for Sector {
 
 impl Decodable for Sector {
     fn decode<D: Decoder>(d: &mut D) -> Result<Sector, D::Error> {
-        d.read_struct("ImageBuffer", 3, |d| {
+        d.read_struct("Sector", 3, |d| {
             let mut sector = Sector::empty();
 
             sector.ready =
