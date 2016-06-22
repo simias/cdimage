@@ -16,6 +16,7 @@ use Image;
 use internal::IndexCache;
 use sector::{Sector, SectorBuilder, Metadata};
 use msf::Msf;
+use bcd::Bcd;
 
 use self::parser::CueParser;
 
@@ -72,11 +73,11 @@ impl Image for Cue {
                         index
                     } else {
                         match self.indices
-                            .find_index1_for_track(index.track()) {
-                                Some((_, i)) => i,
+                            .find_index01_for_track(index.track()) {
+                                Ok((_, i)) => i,
                                 // Shouldn't be reached, should be
                                 // caught by IndexCache's constructor
-                                None =>
+                                Err(_) =>
                                     panic!("Missing index 1 for track {}",
                                            index.track()),
                             }
@@ -129,6 +130,10 @@ impl Image for Cue {
             });
 
         Ok(())
+    }
+
+    fn track_msf(&self, track: Bcd, track_msf: Msf) -> Result<Msf, CdError> {
+        self.indices.track_msf(track, track_msf)
     }
 }
 

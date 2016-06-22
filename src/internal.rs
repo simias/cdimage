@@ -200,22 +200,72 @@ impl<T> IndexCache<T> {
     /// a reference to the `Index` struct.
     pub fn find_index_for_track(&self,
                                 track: Bcd,
-                                index: Bcd) -> Option<(usize, &Index<T>)> {
+                                index: Bcd) -> Result<(usize, &Index<T>),
+                                                      CdError> {
         match self.indices.binary_search_by(
             |idx| match idx.track().cmp(&track) {
                 cmp::Ordering::Equal => idx.index().cmp(&index),
                 o => o,
             }) {
-            Ok(i) => Some((i, &self.indices[i])),
-            Err(_) => None,
+            Ok(i) => Ok((i, &self.indices[i])),
+            Err(_) => Err(CdError::BadTrack),
         }
     }
 
     /// Locate index1 for `track` and return its position along with a
     /// reference to the `Index` struct.
-    pub fn find_index1_for_track(&self,
-                                 track: Bcd) -> Option<(usize, &Index<T>)> {
+    pub fn find_index01_for_track(&self,
+                                  track: Bcd) -> Result<(usize, &Index<T>),
+                                                        CdError> {
         self.find_index_for_track(track, Bcd::one())
+    }
+
+    /// Return the length of the given track starting at INDEX 01, not
+    /// counting the pregap. Also returns the position and a reference
+    /// to the INDEX 01 for this track.
+    pub fn track_length(&self, track: Bcd) -> Result<(Msf, usize, &Index<T>),
+                                                     CdError> {
+        let (pos01, index01) =
+            try!(self.find_index01_for_track(track));
+
+        // Iterate over the remaining indices to find the beginning of
+        // the next track
+
+        let next_track =
+            self.indices[pos01 + 1..].iter().find(|i| i.track() != track);
+
+        let end =
+            match next_track {
+                // We found the next track, the previous sector is the
+                // last one in our track.
+                Some(next) => next.sector_index(),
+                // Seems like we got the last track
+                None => self.lead_out,
+            };
+
+        let len =
+            Msf::from_sector_index(end - index01.sector_index()).unwrap();
+
+        Ok((len, pos01, index01))
+    }
+
+    /// Return the absolute Msf for the position `track_msf` in
+    /// `track`. Will return an error if the `track_msf` is outside of
+    /// the track or if `track` doesn't exist.
+    pub fn track_msf(&self,
+                     track: Bcd,
+                     track_msf: Msf) -> Result<Msf, CdError> {
+
+        // We need to make sure that `track_msf` is not bigger than
+        // this tracks' length.
+        let (len, _, index01) =
+            try!(self.track_length(track));
+
+        if track_msf < len {
+            Ok(index01.msf() + track_msf)
+        } else {
+            Err(CdError::EndOfTrack)
+        }
     }
 }
 
