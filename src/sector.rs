@@ -244,7 +244,7 @@ impl XaSubHeader {
 
 /// CD-ROM XA Mode 2 sectors have two possible forms (advertised in
 /// the subheader)
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum XaForm {
     /// Mode 2 Form 1: 2048 bytes of data, 4 bytes of error detection
     /// and 276 bytes of error correction

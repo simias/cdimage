@@ -31,7 +31,7 @@ fn main() {
 
             c.read_sector(&mut sector, msf).unwrap();
 
-            println!("form1: {}", sector.mode2_xa_subheader().unwrap().form1());
+            println!("form: {:?}", sector.mode2_xa_subheader().unwrap().form());
             println!("format: {:?}", sector.metadata().format);
 
             let bytes = sector.data_2352().unwrap();
