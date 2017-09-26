@@ -1,20 +1,15 @@
 //! CRC implementation
 
-
 /// CRC32 implementation used for CD-ROM EDC
 ///
 /// Uses polynomial (x^16 + x^15 + x^2 + 1) * (x^16 + x^2 + x + 1)
 pub fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0;
-
-    for &b in data {
+    data.iter().fold(0, |crc, b| {
         let index = crc as u8 ^ b;
         let x = CRC32_TABLE[index as usize];
 
-        crc = (crc >> 8) ^ x;
-    }
-
-    crc
+        (crc >> 8) ^ x
+    })
 }
 
 const CRC32_TABLE: [u32; 0x100] = [
