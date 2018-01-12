@@ -9,7 +9,7 @@ use std::fmt;
 /// A single packed BCD value in the range 0-99 (2 digits, 4bits per
 /// digit).
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord,
-         RustcDecodable, RustcEncodable)]
+         Serialize, Deserialize)]
 pub struct Bcd(u8);
 
 impl Bcd {
