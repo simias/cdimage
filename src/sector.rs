@@ -62,7 +62,7 @@ impl Sector {
     /// Retreive the entire sector data (except for the subchannel
     /// data).
     pub fn data_2352(&mut self) -> Result<&[u8; 2352], CdError> {
-        if self.ready.contains(DATA_2352) {
+        if self.ready.contains(DataReady::DATA_2352) {
             Ok(&self.data)
         } else {
             unimplemented!()
@@ -86,7 +86,7 @@ impl Sector {
         }
 
         // The subheader is at the beginning of the payload
-        if !self.ready.contains(PAYLOAD) {
+        if !self.ready.contains(DataReady::PAYLOAD) {
             // Should we really support this case? Which image format
             // could leave us in this state?
             panic!("Missing payload for a track!");
@@ -118,12 +118,12 @@ impl Sector {
 bitflags! {
     /// Bitflag holding the data ready to be read from the sector.
     #[derive(Serialize, Deserialize)]
-    flags DataReady: u8 {
+    struct DataReady: u8 {
         /// 16byte sector header for CD-ROM and CDi data
         /// tracks. Contains the sync pattern, MSF and mode of the
         /// sector. Some image formats don't store this information
         /// since it can be reconstructed easily.
-        const HEADER    = 0b00000001,
+        const HEADER    = 0b00000001;
         /// Sector data without the header and error
         /// detection/correction bits. The actual portion of the
         /// sector this represents varies depends on the sector
@@ -134,15 +134,15 @@ bitflags! {
         /// where this won't be set? Arguably we won't be able to get
         /// the payload in certain image formats (pregap in CUEs for
         /// instance) but then we can just fill them with zeroes?
-        const PAYLOAD   = 0b00000010,
+        const PAYLOAD   = 0b00000010;
         /// Error detection and correction bits (if applicable, always
         /// set for audio tracks).
-        const ECM       = 0b00000100,
+        const ECM       = 0b00000100;
         /// The entire 2352 bytes of sector data (everything except
         /// for the subchannel data)
-        const DATA_2352 = HEADER.bits | PAYLOAD.bits | ECM.bits,
+        const DATA_2352 = Self::HEADER.bits | Self::PAYLOAD.bits | Self::ECM.bits;
         /// Set when the metadata is valid
-        const METADATA  = 0b00001000,
+        const METADATA  = 0b00001000;
     }
 }
 
@@ -224,7 +224,7 @@ impl<'a> SectorBuilder<'a> {
 
         try!(loader(&mut self.sector.data));
 
-        self.sector.ready.insert(DATA_2352);
+        self.sector.ready.insert(DataReady::DATA_2352);
 
         Ok(())
     }
@@ -232,6 +232,6 @@ impl<'a> SectorBuilder<'a> {
     /// Set the metadata for the sector
     pub fn set_metadata(&mut self, metadata: Metadata) {
         self.sector.metadata = metadata;
-        self.sector.ready.insert(METADATA);
+        self.sector.ready.insert(DataReady::METADATA);
     }
 }
