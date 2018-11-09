@@ -7,6 +7,7 @@ description = "Generic interface to manipulate various CD image formats"
 license = "MIT/Apache-2.0"
 
 [dependencies]
-bitflags = "0.4.0"
-arrayref = "0.3.2"
-rustc-serialize = "0.3.19"
+bitflags = "1.0"
+arrayref = "0.3.5"
+serde = "1.0"
+serde_derive = "1.0"
