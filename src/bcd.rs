@@ -3,13 +3,12 @@
 //! order to make it easier to display those informations on the first
 //! CD players.
 
-use std::str::FromStr;
 use std::fmt;
+use std::str::FromStr;
 
 /// A single packed BCD value in the range 0-99 (2 digits, 4bits per
 /// digit).
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord,
-         RustcDecodable, RustcEncodable)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
 pub struct Bcd(u8);
 
 impl Bcd {
@@ -74,11 +73,10 @@ impl FromStr for Bcd {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let b =
-            match u8::from_str(s) {
-                Ok(b) => b,
-                Err(_) => return Err(()),
-            };
+        let b = match u8::from_str(s) {
+            Ok(b) => b,
+            Err(_) => return Err(()),
+        };
 
         Bcd::from_binary(b).ok_or(())
     }
@@ -103,7 +101,6 @@ fn conversions() {
     assert!(Bcd::from_binary(42) == Some(Bcd(0x42)));
     assert!(Bcd::from_binary(100) == None);
     assert!(Bcd::from_binary(0xff) == None);
-
 }
 
 #[test]

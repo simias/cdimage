@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
-use std::fs::{File, metadata};
+use std::fs::{metadata, File};
 use std::io;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use internal::{Index, IndexCache};
@@ -11,7 +11,7 @@ use TrackFormat;
 use bcd::Bcd;
 use msf::Msf;
 
-use super::{Cue, Storage, BinaryBlob, CueTrackType, CUE_SHEET_MAX_LENGTH};
+use super::{BinaryBlob, Cue, CueTrackType, Storage, CUE_SHEET_MAX_LENGTH};
 
 pub struct CueParser {
     /// Path to the cue sheet
@@ -43,12 +43,10 @@ impl CueParser {
     /// Parse a CUE sheet, open the BIN files and generate the CD
     /// structure
     pub fn build_cue(cue_path: &Path) -> Result<Cue, CdError> {
-
-        let cue_sheet =
-            match read_file(cue_path, CUE_SHEET_MAX_LENGTH) {
-                Ok(c) => c,
-                Err(e) => return Err(CdError::IoError(e)),
-            };
+        let cue_sheet = match read_file(cue_path, CUE_SHEET_MAX_LENGTH) {
+            Ok(c) => c,
+            Err(e) => return Err(CdError::IoError(e)),
+        };
 
         let mut parser = CueParser {
             cue_path: PathBuf::from(cue_path),
@@ -69,9 +67,7 @@ impl CueParser {
         try!(parser.parse(&cue_sheet));
 
         Ok(Cue {
-            indices: try!(IndexCache::new(parser.cue_path,
-                                          parser.indices,
-                                          parser.msf)),
+            indices: try!(IndexCache::new(parser.cue_path, parser.indices, parser.msf)),
             bin_files: parser.bin_files,
         })
     }
@@ -85,7 +81,6 @@ impl CueParser {
     }
 
     fn parse(&mut self, cue_sheet: &[u8]) -> Result<(), CdError> {
-
         while let Some((new_pos, buf)) = next_line(cue_sheet, self.pos) {
             self.pos = new_pos;
             self.line += 1;
@@ -99,17 +94,16 @@ impl CueParser {
 
             let command = params[0];
 
-            type Callback = fn (&mut CueParser,
-                                &[&[u8]]) -> Result<(), CdError>;
+            type Callback = fn(&mut CueParser, &[&[u8]]) -> Result<(), CdError>;
 
-            let handlers: [(&'static [u8], Callback, Option<u32>); 4] =
-                [(b"REM", CueParser::command_rem, None),
-                 (b"FILE", CueParser::command_file, Some(3)),
-                 (b"TRACK", CueParser::command_track, Some(3)),
-                 (b"INDEX", CueParser::command_index, Some(3))];
+            let handlers: [(&'static [u8], Callback, Option<u32>); 4] = [
+                (b"REM", CueParser::command_rem, None),
+                (b"FILE", CueParser::command_file, Some(3)),
+                (b"TRACK", CueParser::command_track, Some(3)),
+                (b"INDEX", CueParser::command_index, Some(3)),
+            ];
 
-            let callback = handlers.iter()
-                .find(|&&(name, _, _)| name == command);
+            let callback = handlers.iter().find(|&&(name, _, _)| name == command);
 
             match callback {
                 Some(&(_, c, nparams)) => {
@@ -117,12 +111,14 @@ impl CueParser {
                         if params.len() != nparams as usize {
                             let command = String::from_utf8_lossy(command);
 
-                            let error = format!("Wrong number of parameters \
-                                                 for command {}: expected \
-                                                 {} got {}",
-                                                command,
-                                                nparams,
-                                                params.len());
+                            let error = format!(
+                                "Wrong number of parameters \
+                                 for command {}: expected \
+                                 {} got {}",
+                                command,
+                                nparams,
+                                params.len()
+                            );
 
                             return Err(self.error(error));
                         }
@@ -175,8 +171,7 @@ impl CueParser {
             // parent completely bin_path (see the doc for PathBuf)
             Some(p) => bin_path.push(p),
             None => {
-                return Err(self.error_str(
-                    "Invalid BIN path in cuesheet"));
+                return Err(self.error_str("Invalid BIN path in cuesheet"));
             }
         }
 
@@ -188,11 +183,10 @@ impl CueParser {
             return Err(self.error(error));
         }
 
-        let size =
-            match metadata(&bin_path) {
-                Ok(m) => m.len(),
-                Err(e) => return Err(CdError::IoError(e)),
-            };
+        let size = match metadata(&bin_path) {
+            Ok(m) => m.len(),
+            Err(e) => return Err(CdError::IoError(e)),
+        };
 
         // Open the new BIN blob
         let bin = try!(BinaryBlob::new(&bin_path));
@@ -212,28 +206,26 @@ impl CueParser {
             return Err(self.error_str("File-less track"));
         }
 
-        let n =
-            match from_buf(params[1]) {
-                Ok(b) => b,
-                Err(_) => return Err(self.error_str("Invalid track number")),
-            };
+        let n = match from_buf(params[1]) {
+            Ok(b) => b,
+            Err(_) => return Err(self.error_str("Invalid track number")),
+        };
 
-        let t =
-            match params[2] {
-                b"AUDIO" => CueTrackType::Audio,
-                b"CDG" => CueTrackType::CdG,
-                b"MODE1/2048" => CueTrackType::Mode1Data,
-                b"MODE1/2352" => CueTrackType::Mode1Raw,
-                b"MODE2/2336" => CueTrackType::Mode2Headerless,
-                b"MODE2/2352" => CueTrackType::Mode2Raw,
-                b"CDI/2336" => CueTrackType::CdIHeaderless,
-                b"CDI/2352" => CueTrackType::CdIRaw,
-                _ => return Err(self.error_str("Unsupported track type")),
-            };
+        let t = match params[2] {
+            b"AUDIO" => CueTrackType::Audio,
+            b"CDG" => CueTrackType::CdG,
+            b"MODE1/2048" => CueTrackType::Mode1Data,
+            b"MODE1/2352" => CueTrackType::Mode1Raw,
+            b"MODE2/2336" => CueTrackType::Mode2Headerless,
+            b"MODE2/2352" => CueTrackType::Mode2Raw,
+            b"CDI/2336" => CueTrackType::CdIHeaderless,
+            b"CDI/2352" => CueTrackType::CdIRaw,
+            _ => return Err(self.error_str("Unsupported track type")),
+        };
 
         let f = match t {
             CueTrackType::Audio => TrackFormat::Audio,
-            CueTrackType::CdG  => TrackFormat::CdG,
+            CueTrackType::CdG => TrackFormat::CdG,
             CueTrackType::Mode1Data => TrackFormat::Mode1,
             CueTrackType::Mode1Raw => TrackFormat::Mode1,
             CueTrackType::Mode2Headerless => TrackFormat::Mode2Xa,
@@ -247,12 +239,7 @@ impl CueParser {
         if n.binary() == 1 {
             // CUE always ignores track 1's pregap, let's add it in
             // here
-            let pregap = Index::new(Bcd::zero(),
-                                    Msf::zero(),
-                                    n,
-                                    f,
-                                    0,
-                                    Storage::PreGap);
+            let pregap = Index::new(Bcd::zero(), Msf::zero(), n, f, 0, Storage::PreGap);
 
             self.indices.push(pregap);
         }
@@ -262,17 +249,15 @@ impl CueParser {
 
     /// INDEX number mm:ss:ff
     fn command_index(&mut self, params: &[&[u8]]) -> Result<(), CdError> {
-        let (track_number, track_type, track_format) =
-            match self.track {
-                Some(t) => t,
-                None => return Err(self.error_str("Track-less index")),
-            };
+        let (track_number, track_type, track_format) = match self.track {
+            Some(t) => t,
+            None => return Err(self.error_str("Track-less index")),
+        };
 
-        let n =
-            match from_buf(params[1]) {
-                Ok(b) => b,
-                Err(_) => return Err(self.error_str("Invalid index")),
-            };
+        let n = match from_buf(params[1]) {
+            Ok(b) => b,
+            Err(_) => return Err(self.error_str("Invalid index")),
+        };
 
         let msf = match from_buf(params[2]) {
             Ok(b) => b,
@@ -288,14 +273,14 @@ impl CueParser {
 
         let bin_index = (self.bin_files.len() - 1) as u32;
 
-        let index = Index::new(n,
-                               self.msf,
-                               track_number,
-                               track_format,
-                               0,
-                               Storage::Bin(bin_index,
-                                            self.consumed_bytes,
-                                            track_type));
+        let index = Index::new(
+            n,
+            self.msf,
+            track_number,
+            track_format,
+            0,
+            Storage::Bin(bin_index, self.consumed_bytes, track_type),
+        );
 
         self.indices.push(index);
         self.index_type = Some(track_type);
@@ -318,12 +303,11 @@ impl CueParser {
         while pos < len {
             match in_word {
                 Some((start, quoted)) => {
-                    let delim =
-                        if quoted {
-                            b"\"" as &[u8]
-                        } else {
-                            whitespace as &[u8]
-                        };
+                    let delim = if quoted {
+                        b"\"" as &[u8]
+                    } else {
+                        whitespace as &[u8]
+                    };
 
                     if delim.contains(&line[pos]) {
                         words.push(&line[start..pos]);
@@ -368,22 +352,18 @@ impl CueParser {
 
         let ty = match self.index_type {
             Some(t) => t,
-            None =>
-                return Err(self.error_str("File doesn't start at 00:00:00")),
+            None => return Err(self.error_str("File doesn't start at 00:00:00")),
         };
 
         let sector_size = ty.sector_size() as u64;
 
-        let index_size =
-            match sector_size.checked_mul(delta) {
-                Some(m) => m,
-                None =>
-                    return Err(self.error_str("Overflow: index is too big")),
-            };
+        let index_size = match sector_size.checked_mul(delta) {
+            Some(m) => m,
+            None => return Err(self.error_str("Overflow: index is too big")),
+        };
 
         if index_size > (self.bin_len - self.consumed_bytes) {
-            return Err(self.error_str(
-                "Index out of range (past the end of the BIN file)"));
+            return Err(self.error_str("Index out of range (past the end of the BIN file)"));
         }
 
         self.consumed_bytes += index_size;
@@ -407,25 +387,18 @@ impl CueParser {
         let sectors = remaining_bytes / sector_size;
 
         if remaining_bytes % sector_size != 0 {
-            return Err(self.error_str(
-                "Missaligned sector data while finishing a BIN file"));
+            return Err(self.error_str("Missaligned sector data while finishing a BIN file"));
         }
 
-        let msf =
-            match Msf::from_sector_index(sectors as u32) {
-                Some(m) => m,
-                None =>
-                    return Err(self.error_str(
-                        "Previous BIN file is too big, MSF overflow")),
-            };
+        let msf = match Msf::from_sector_index(sectors as u32) {
+            Some(m) => m,
+            None => return Err(self.error_str("Previous BIN file is too big, MSF overflow")),
+        };
 
-        self.msf =
-            match self.msf.checked_add(msf) {
-                Some(m) => m,
-                None =>
-                    return Err(self.error_str(
-                        "Previous BIN file is too big, MSF overflow")),
-            };
+        self.msf = match self.msf.checked_add(msf) {
+            Some(m) => m,
+            None => return Err(self.error_str("Previous BIN file is too big, MSF overflow")),
+        };
 
         Ok(())
     }
@@ -437,8 +410,10 @@ fn read_file(cue: &Path, max_len: u64) -> Result<Vec<u8>, io::Error> {
     let len = md.len();
 
     if len > max_len {
-        return Err(io::Error::new(io::ErrorKind::InvalidData,
-                                  "Cue sheet is too big"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Cue sheet is too big",
+        ));
     }
 
     let mut file = try!(File::open(cue));
@@ -470,11 +445,10 @@ fn next_line(cue_sheet: &[u8], start: usize) -> Option<(usize, &[u8])> {
 
 /// Like from_str but from an `u8`. Fails if buffer is not valid utf-8
 fn from_buf<T: FromStr>(b: &[u8]) -> Result<T, ()> {
-    let s =
-        match ::std::str::from_utf8(b) {
-            Ok(s) => s,
-            Err(_) => return Err(()),
-        };
+    let s = match ::std::str::from_utf8(b) {
+        Ok(s) => s,
+        Err(_) => return Err(()),
+    };
 
     match T::from_str(s) {
         Ok(t) => Ok(t),
@@ -501,11 +475,10 @@ pub fn build_path(bytes: &[u8]) -> Option<PathBuf> {
     // On Windows and other non-unices I assume that the path is
     // utf-8 encoded. That might be a bogus assumption, we'll see
     // in practice.
-    let s =
-        match ::std::str::from_utf8(bytes) {
-            Ok(s) => s,
-            Err(_) => return None,
-        };
+    let s = match ::std::str::from_utf8(bytes) {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
 
     Some(PathBuf::from(s))
 }

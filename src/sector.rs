@@ -1,12 +1,12 @@
 //! CD sector interface.
 
-use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
 use CdError;
 use TrackFormat;
 
-use msf::Msf;
 use bcd::Bcd;
+use msf::Msf;
 
 /// Sector metadata, contains informations about the position and
 /// format of a given sector.
@@ -102,11 +102,10 @@ impl Sector {
     pub fn mode2_xa_payload(&self) -> Result<&[u8], CdError> {
         let subheader = try!(self.mode2_xa_subheader());
 
-        let payload =
-            match subheader.form() {
-                XaForm::Form1 => &self.data[24..2072],
-                XaForm::Form2 => &self.data[24..2348],
-            };
+        let payload = match subheader.form() {
+            XaForm::Form1 => &self.data[24..2072],
+            XaForm::Form2 => &self.data[24..2348],
+        };
 
         Ok(payload)
     }
@@ -114,26 +113,18 @@ impl Sector {
 
 impl Encodable for Sector {
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-
         s.emit_struct("Sector", 3, |s| {
-            try!(s.emit_struct_field("ready", 0,
-                                     |s| self.ready.encode(s)));
+            try!(s.emit_struct_field("ready", 0, |s| self.ready.encode(s)));
 
-            try!(s.emit_struct_field(
-                "data", 1,
-                |s| s.emit_seq(
-                    2352,
-                    |s| {
-                        for (i, &b) in self.data.iter().enumerate() {
-                            try!(s.emit_seq_elt(i, |s| b.encode(s)))
-                        }
+            try!(s.emit_struct_field("data", 1, |s| s.emit_seq(2352, |s| {
+                for (i, &b) in self.data.iter().enumerate() {
+                    try!(s.emit_seq_elt(i, |s| b.encode(s)))
+                }
 
-                        Ok(())
-                    })));
+                Ok(())
+            })));
 
-            try!(s.emit_struct_field("metadata", 2,
-                                     |s| self.metadata.encode(s)));
-
+            try!(s.emit_struct_field("metadata", 2, |s| self.metadata.encode(s)));
 
             Ok(())
         })
@@ -145,31 +136,23 @@ impl Decodable for Sector {
         d.read_struct("Sector", 3, |d| {
             let mut sector = Sector::empty();
 
-            sector.ready =
-                try!(d.read_struct_field("ready", 0,
-                                         Decodable::decode));
+            sector.ready = try!(d.read_struct_field("ready", 0, Decodable::decode));
 
-            try!(d.read_struct_field(
-                    "data", 1,
-                    |d| {
-                        d.read_seq(|d, len| {
-                            if len != 2352 {
-                                return Err(
-                                    d.error("wrong sector data length"));
-                            }
+            try!(d.read_struct_field("data", 1, |d| {
+                d.read_seq(|d, len| {
+                    if len != 2352 {
+                        return Err(d.error("wrong sector data length"));
+                    }
 
-                            for i in 0..len {
-                                sector.data[i] =
-                                    try!(d.read_seq_elt(i, Decodable::decode));
-                            }
+                    for i in 0..len {
+                        sector.data[i] = try!(d.read_seq_elt(i, Decodable::decode));
+                    }
 
-                            Ok(len)
-                        })
-                    }));
+                    Ok(len)
+                })
+            }));
 
-            sector.metadata =
-                try!(d.read_struct_field("metadata", 2,
-                                         Decodable::decode));
+            sector.metadata = try!(d.read_struct_field("metadata", 2, Decodable::decode));
 
             Ok(sector)
         })
@@ -237,7 +220,7 @@ impl XaSubHeader {
     pub fn form(&self) -> XaForm {
         match self.subheader[2] & 0x20 != 0 {
             false => XaForm::Form1,
-            true  => XaForm::Form2,
+            true => XaForm::Form2,
         }
     }
 }
@@ -271,9 +254,7 @@ impl<'a> SectorBuilder<'a> {
     pub fn new(sector: &mut Sector) -> SectorBuilder {
         sector.ready = DataReady::empty();
 
-        SectorBuilder {
-            sector: sector,
-        }
+        SectorBuilder { sector: sector }
     }
 
     /// Load up the full 2352 bytes of sector data. The `loader`
@@ -281,8 +262,9 @@ impl<'a> SectorBuilder<'a> {
     /// data. If the `loader` callback returns an error the sector
     /// data won't be tagged as valid.
     pub fn set_data_2352<F, E>(&mut self, loader: F) -> Result<(), E>
-        where F: FnOnce(&mut [u8; 2352]) -> Result<(), E> {
-
+    where
+        F: FnOnce(&mut [u8; 2352]) -> Result<(), E>,
+    {
         try!(loader(&mut self.sector.data));
 
         self.sector.ready.insert(DATA_2352);

@@ -59,9 +59,7 @@ impl SubChannelP {
     /// Create a SubChannelP instance from 12 bytes of subchannel
     /// data.
     pub fn new(raw: [u8; 12]) -> SubChannelP {
-        SubChannelP {
-            bytes: raw,
-        }
+        SubChannelP { bytes: raw }
     }
 
     /// Return true if all the bits of the channel are set to the same
@@ -97,9 +95,7 @@ impl SubChannelQ {
     /// Create a SubChannelQ instance from 12 bytes of subchannel
     /// data.
     pub fn new(raw: [u8; 12]) -> SubChannelQ {
-        SubChannelQ {
-            bytes: raw,
-        }
+        SubChannelQ { bytes: raw }
     }
 
     /// Return true if this is a data track. For table of content
@@ -165,67 +161,58 @@ impl SubChannelQ {
         if self.mode() != 1 {
             // We might want to add Mode2 and Mode3 support here at
             // some point. For the time being only Mode1 is supported.
-            return QData::Unsupported
+            return QData::Unsupported;
         }
 
-        let track =
-            match Bcd::from_bcd(self.bytes[1]) {
-                Some(b) => b,
-                None => return QData::Unsupported,
-            };
+        let track = match Bcd::from_bcd(self.bytes[1]) {
+            Some(b) => b,
+            None => return QData::Unsupported,
+        };
 
-        let min =
-            match Bcd::from_bcd(self.bytes[3]) {
-                Some(b) => b,
-                None => return QData::Unsupported,
-            };
+        let min = match Bcd::from_bcd(self.bytes[3]) {
+            Some(b) => b,
+            None => return QData::Unsupported,
+        };
 
-        let sec =
-            match Bcd::from_bcd(self.bytes[4]) {
-                Some(b) => b,
-                None => return QData::Unsupported,
-            };
+        let sec = match Bcd::from_bcd(self.bytes[4]) {
+            Some(b) => b,
+            None => return QData::Unsupported,
+        };
 
-        let frac =
-            match Bcd::from_bcd(self.bytes[5]) {
-                Some(b) => b,
-                None => return QData::Unsupported,
-            };
+        let frac = match Bcd::from_bcd(self.bytes[5]) {
+            Some(b) => b,
+            None => return QData::Unsupported,
+        };
 
-        let msf =
-            match Msf::new(min, sec, frac) {
-                Some(m) => m,
-                None => return QData::Unsupported,
-            };
+        let msf = match Msf::new(min, sec, frac) {
+            Some(m) => m,
+            None => return QData::Unsupported,
+        };
 
         let zero = self.bytes[6];
         if zero != 0 {
             return QData::Unsupported;
         }
 
-        let ap_min =
-            match Bcd::from_bcd(self.bytes[7]) {
-                Some(b) => b,
-                None => return QData::Unsupported,
-            };
+        let ap_min = match Bcd::from_bcd(self.bytes[7]) {
+            Some(b) => b,
+            None => return QData::Unsupported,
+        };
 
-        let ap_sec =
-            match Bcd::from_bcd(self.bytes[8]) {
-                Some(b) => b,
-                None => return QData::Unsupported,
-            };
+        let ap_sec = match Bcd::from_bcd(self.bytes[8]) {
+            Some(b) => b,
+            None => return QData::Unsupported,
+        };
 
-        let ap_frac =
-            match Bcd::from_bcd(self.bytes[9]) {
-                Some(b) => b,
-                None => return QData::Unsupported,
-            };
+        let ap_frac = match Bcd::from_bcd(self.bytes[9]) {
+            Some(b) => b,
+            None => return QData::Unsupported,
+        };
 
-        let ap_msf =
-            match Msf::new(ap_min, ap_sec, ap_frac) {
-                Some(m) => m,
-                None => return QData::Unsupported,
-            };
+        let ap_msf = match Msf::new(ap_min, ap_sec, ap_frac) {
+            Some(m) => m,
+            None => return QData::Unsupported,
+        };
 
         if track.bcd() == 0 {
             // We're in the lead-in, this is a TOC entry
@@ -233,13 +220,12 @@ impl SubChannelQ {
 
             match pointer {
                 0xa0 => {
-                    let format =
-                        match ap_sec.bcd() {
-                            0x00 => SessionFormat::CddaCdRom,
-                            0x10 => SessionFormat::Cdi,
-                            0x20 => SessionFormat::Cdxa,
-                            _ => return QData::Unsupported,
-                        };
+                    let format = match ap_sec.bcd() {
+                        0x00 => SessionFormat::CddaCdRom,
+                        0x10 => SessionFormat::Cdi,
+                        0x20 => SessionFormat::Cdxa,
+                        _ => return QData::Unsupported,
+                    };
 
                     if ap_frac.bcd() != 0 {
                         return QData::Unsupported;
@@ -254,15 +240,12 @@ impl SubChannelQ {
 
                     QData::Mode1TocLastTrack(ap_min, msf)
                 }
-                0xa2 => {
-                    QData::Mode1TocLeadOut(ap_msf, msf)
-                }
+                0xa2 => QData::Mode1TocLeadOut(ap_msf, msf),
                 _ => {
-                    let ptrack =
-                        match Bcd::from_bcd(pointer) {
-                            Some(b) => b,
-                            None => return QData::Unsupported,
-                        };
+                    let ptrack = match Bcd::from_bcd(pointer) {
+                        Some(b) => b,
+                        None => return QData::Unsupported,
+                    };
 
                     QData::Mode1Toc(ptrack, ap_msf, msf)
                 }
@@ -338,9 +321,7 @@ impl SubChannelBasic {
     /// Create a SubChannelBasic instance from 12 bytes of subchannel
     /// data.
     pub fn new(raw: [u8; 12]) -> SubChannelQ {
-        SubChannelQ {
-            bytes: raw,
-        }
+        SubChannelQ { bytes: raw }
     }
 }
 

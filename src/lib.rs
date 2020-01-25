@@ -11,20 +11,20 @@ extern crate arrayref;
 
 extern crate rustc_serialize;
 
-use std::path::PathBuf;
-use std::io;
-use std::fmt;
-use sector::Sector;
-use msf::Msf;
 use bcd::Bcd;
+use msf::Msf;
+use sector::Sector;
+use std::fmt;
+use std::io;
+use std::path::PathBuf;
 
 pub mod bcd;
-pub mod msf;
-pub mod subchannel;
-pub mod internal;
-pub mod sector;
-pub mod cue;
 pub mod crc;
+pub mod cue;
+pub mod internal;
+pub mod msf;
+pub mod sector;
+pub mod subchannel;
 
 /// Abstract read-only interface to an image format
 pub trait Image {
@@ -68,7 +68,7 @@ pub enum TrackFormat {
     /// CD-ROM XA Mode 2 data
     Mode2Xa,
     /// CD-i Mode 2 data
-    Mode2CdI
+    Mode2CdI,
 }
 
 /// Error type for disc operations.
@@ -98,10 +98,10 @@ pub enum CdError {
 impl fmt::Display for CdError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &CdError::ParseError(ref path, line, ref err) =>
-                write!(f, "{}:{}: {}", path.display(), line, err),
-            e =>
-                write!(f, "{:?}", e)
+            &CdError::ParseError(ref path, line, ref err) => {
+                write!(f, "{}:{}: {}", path.display(), line, err)
+            }
+            e => write!(f, "{:?}", e),
         }
     }
 }

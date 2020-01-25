@@ -7,16 +7,16 @@
 //!
 //! The CUE file format does not support multi-session discs
 
-use std::path::Path;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 
+use bcd::Bcd;
+use internal::IndexCache;
+use msf::Msf;
+use sector::{Metadata, Sector, SectorBuilder};
 use CdError;
 use Image;
-use internal::IndexCache;
-use sector::{Sector, SectorBuilder, Metadata};
-use msf::Msf;
-use bcd::Bcd;
 
 use self::parser::CueParser;
 
@@ -35,7 +35,6 @@ impl Cue {
     /// Parse a CUE sheet, open the BIN files and build a `Cue`
     /// instance.
     pub fn new(cue_path: &Path) -> Result<Cue, CdError> {
-
         CueParser::build_cue(cue_path)
     }
 }
@@ -45,46 +44,37 @@ impl Image for Cue {
         "CUE".to_string()
     }
 
-    fn read_sector(&mut self,
-                   sector: &mut Sector,
-                   msf: Msf) -> Result<(), CdError> {
-        let (pos, index) =
-            match self.indices.find_index_for_msf(msf) {
-                Some(i) => i,
-                None => return Err(CdError::LeadOut),
-            };
+    fn read_sector(&mut self, sector: &mut Sector, msf: Msf) -> Result<(), CdError> {
+        let (pos, index) = match self.indices.find_index_for_msf(msf) {
+            Some(i) => i,
+            None => return Err(CdError::LeadOut),
+        };
 
         // First we compute the relative track MSF
-        let track_msf =
-            if index.is_pregap() {
-                // In the pregap the track MSF decreases until index1
-                // is reached
-                let index1 =
-                    match self.indices.get(pos + 1) {
-                        Some(i) => i,
-                        None => panic!("Pregap without index 1!"),
-                    };
-
-                index1.msf() - msf
-            } else {
-                // The track MSF is relative to index1
-                let index1 =
-                    if index.index().bcd() == 0x01 {
-                        index
-                    } else {
-                        match self.indices
-                            .find_index01_for_track(index.track()) {
-                                Ok((_, i)) => i,
-                                // Shouldn't be reached, should be
-                                // caught by IndexCache's constructor
-                                Err(_) =>
-                                    panic!("Missing index 1 for track {}",
-                                           index.track()),
-                            }
-                    };
-
-                msf - index1.msf()
+        let track_msf = if index.is_pregap() {
+            // In the pregap the track MSF decreases until index1
+            // is reached
+            let index1 = match self.indices.get(pos + 1) {
+                Some(i) => i,
+                None => panic!("Pregap without index 1!"),
             };
+
+            index1.msf() - msf
+        } else {
+            // The track MSF is relative to index1
+            let index1 = if index.index().bcd() == 0x01 {
+                index
+            } else {
+                match self.indices.find_index01_for_track(index.track()) {
+                    Ok((_, i)) => i,
+                    // Shouldn't be reached, should be
+                    // caught by IndexCache's constructor
+                    Err(_) => panic!("Missing index 1 for track {}", index.track()),
+                }
+            };
+
+            msf - index1.msf()
+        };
 
         let mut builder = SectorBuilder::new(sector);
 
@@ -98,36 +88,33 @@ impl Image for Cue {
                     panic!("Unimplemented CUE track type: {:?}", ty);
                 }
 
-                let index_offset = ty.sector_size() as u64 *
-                    (msf.sector_index() - index.sector_index()) as u64;
+                let index_offset =
+                    ty.sector_size() as u64 * (msf.sector_index() - index.sector_index()) as u64;
 
                 let offset = offset + index_offset;
 
-                let res =
-                    builder.set_data_2352(|data| {
-                        try!(bin.file.seek(SeekFrom::Start(offset)));
+                let res = builder.set_data_2352(|data| {
+                    try!(bin.file.seek(SeekFrom::Start(offset)));
 
-                        bin.file.read_exact(data)
-                    });
+                    bin.file.read_exact(data)
+                });
 
                 if let Err(e) = res {
                     return Err(CdError::IoError(e));
                 }
             }
-            &Storage::PreGap =>
-                panic!("Unhandled CUE pregap read"),
+            &Storage::PreGap => panic!("Unhandled CUE pregap read"),
         }
 
         // Now let's fill up the metadata
-        builder.set_metadata(
-            Metadata {
-                msf: msf,
-                track_msf: track_msf,
-                index: index.index(),
-                track: index.track(),
-                format: index.format(),
-                session: index.session(),
-            });
+        builder.set_metadata(Metadata {
+            msf: msf,
+            track_msf: track_msf,
+            index: index.index(),
+            track: index.track(),
+            format: index.format(),
+            session: index.session(),
+        });
 
         Ok(())
     }
@@ -193,16 +180,12 @@ struct BinaryBlob {
 
 impl BinaryBlob {
     fn new(path: &Path) -> Result<BinaryBlob, CdError> {
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => return Err(CdError::IoError(e)),
+        };
 
-        let file =
-            match File::open(path) {
-                Ok(f) => f,
-                Err(e) => return Err(CdError::IoError(e)),
-            };
-
-        Ok(BinaryBlob {
-            file: file,
-        })
+        Ok(BinaryBlob { file: file })
     }
 }
 

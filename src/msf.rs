@@ -5,8 +5,8 @@
 //! There are 75 frames/sectors in a second, 60 seconds in a
 //! minute. All three components are stored as BCD.
 
-use std::{fmt, cmp, ops};
 use std::str::FromStr;
+use std::{cmp, fmt, ops};
 
 use super::bcd::Bcd;
 
@@ -38,23 +38,20 @@ impl Msf {
     /// an `u8`. Returns none if one of the values is not valid BCD of
     /// if it's not a valid Msf
     pub fn from_bcd(m: u8, s: u8, f: u8) -> Option<Msf> {
-        let m =
-            match Bcd::from_bcd(m) {
-                Some(b) => b,
-                None => return None,
-            };
+        let m = match Bcd::from_bcd(m) {
+            Some(b) => b,
+            None => return None,
+        };
 
-        let s =
-            match Bcd::from_bcd(s) {
-                Some(b) => b,
-                None => return None,
-            };
+        let s = match Bcd::from_bcd(s) {
+            Some(b) => b,
+            None => return None,
+        };
 
-        let f =
-            match Bcd::from_bcd(f) {
-                Some(b) => b,
-                None => return None,
-            };
+        let f = match Bcd::from_bcd(f) {
+            Some(b) => b,
+            None => return None,
+        };
 
         Msf::new(m, s, f)
     }
@@ -104,15 +101,15 @@ impl Msf {
         let Msf(m, s, f) = self;
 
         if f.bcd() < 0x74 {
-            return Some(Msf(m, s, f.wrapping_next()))
+            return Some(Msf(m, s, f.wrapping_next()));
         }
 
         if s.bcd() < 0x59 {
-            return Some(Msf(m, s.wrapping_next(), Bcd::zero()))
+            return Some(Msf(m, s.wrapping_next(), Bcd::zero()));
         }
 
         if m.bcd() < 0x99 {
-            return Some(Msf(m.wrapping_next(), Bcd::zero(), Bcd::zero()))
+            return Some(Msf(m.wrapping_next(), Bcd::zero(), Bcd::zero()));
         }
 
         None
@@ -193,7 +190,6 @@ impl FromStr for Msf {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-
         let mut msf = [Bcd::zero(); 3];
         let mut count = 0;
 
@@ -222,15 +218,14 @@ mod test {
 
     #[test]
     fn conversions() {
-
         for &(m, s, f) in &[
             (0x00, 0x00, 0x00),
             (0x01, 0x00, 0x00),
             (0x00, 0x01, 0x00),
             (0x00, 0x00, 0x01),
             (0x12, 0x34, 0x56),
-            (0x99, 0x59, 0x74),] {
-
+            (0x99, 0x59, 0x74),
+        ] {
             let m = msf(m, s, f);
 
             assert!(m == Msf::from_sector_index(m.sector_index()).unwrap());
@@ -254,7 +249,6 @@ mod test {
 
         assert!(m - n == msf(0x12, 0x33, 0x74));
 
-
         let m = msf(0x12, 0x34, 0x01);
         let n = msf(0x00, 0x52, 0x10);
 
@@ -276,8 +270,11 @@ mod test {
     }
 
     fn msf(m: u8, s: u8, f: u8) -> Msf {
-        Msf::new(Bcd::from_bcd(m).unwrap(),
-                 Bcd::from_bcd(s).unwrap(),
-                 Bcd::from_bcd(f).unwrap()).unwrap()
+        Msf::new(
+            Bcd::from_bcd(m).unwrap(),
+            Bcd::from_bcd(s).unwrap(),
+            Bcd::from_bcd(f).unwrap(),
+        )
+        .unwrap()
     }
 }

@@ -3,9 +3,9 @@ extern crate cdimage;
 use std::path::Path;
 use std::str::FromStr;
 
-use cdimage::Image;
 use cdimage::msf::Msf;
 use cdimage::sector::Sector;
+use cdimage::Image;
 
 fn main() {
     let argv: Vec<_> = std::env::args().collect();
@@ -17,11 +17,10 @@ fn main() {
     let file = &argv[1];
     let msf = &argv[2];
 
-    let msf =
-        match Msf::from_str(msf) {
-            Ok(m) => m,
-            Err(()) => panic!("Invalid MSF"),
-        };
+    let msf = match Msf::from_str(msf) {
+        Ok(m) => m,
+        Err(()) => panic!("Invalid MSF"),
+    };
 
     match cdimage::cue::Cue::new(Path::new(file)) {
         Ok(mut c) => {
@@ -50,7 +49,7 @@ fn hexdump(bytes: &[u8]) {
     let mut pos = 0;
 
     while pos + 16 <= bytes.len() {
-        let bytes = &bytes[pos..pos+16];
+        let bytes = &bytes[pos..pos + 16];
 
         print!("{:08x}  ", pos);
 
