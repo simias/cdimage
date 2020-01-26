@@ -43,11 +43,11 @@ impl<T> Index<T> {
     ) -> Index<T> {
         Index {
             sector_index: start.sector_index(),
-            index: index,
-            track: track,
-            format: format,
-            session: session,
-            private: private,
+            index,
+            track,
+            format,
+            session,
+            private,
         }
     }
 
@@ -158,7 +158,7 @@ impl<T> IndexCache<T> {
         // TODO: Add more validation here.
 
         Ok(IndexCache {
-            indices: indices,
+            indices,
             lead_out: lead_out.sector_index(),
         })
     }

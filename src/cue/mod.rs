@@ -69,7 +69,7 @@ impl Image for Cue {
                     Ok((_, i)) => i,
                     // Shouldn't be reached, should be
                     // caught by IndexCache's constructor
-                    Err(_) => panic!("Missing index 1 for track {}", index.track()),
+                    Err(_e) => panic!("Missing index 1 for track {}", index.track()),
                 }
             };
 
@@ -80,8 +80,8 @@ impl Image for Cue {
 
         // First let's read the sector data
         match index.private() {
-            &Storage::Bin(bin, offset, ty) => {
-                let bin = &mut self.bin_files[bin as usize];
+            Storage::Bin(bin, offset, ty) => {
+                let bin = &mut self.bin_files[*bin as usize];
 
                 // For now we only support "simple sector" format
                 if ty.sector_size() != 2352 {
@@ -103,13 +103,13 @@ impl Image for Cue {
                     return Err(CdError::IoError(e));
                 }
             }
-            &Storage::PreGap => panic!("Unhandled CUE pregap read"),
+            Storage::PreGap => panic!("Unhandled CUE pregap read"),
         }
 
         // Now let's fill up the metadata
         builder.set_metadata(Metadata {
-            msf: msf,
-            track_msf: track_msf,
+            msf,
+            track_msf,
             index: index.index(),
             track: index.track(),
             format: index.format(),
@@ -185,7 +185,7 @@ impl BinaryBlob {
             Err(e) => return Err(CdError::IoError(e)),
         };
 
-        Ok(BinaryBlob { file: file })
+        Ok(BinaryBlob { file })
     }
 }
 

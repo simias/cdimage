@@ -267,8 +267,7 @@ impl SubChannel for SubChannelQ {
     }
 }
 
-/// Possible contents of the Q subchannel data depending on the
-/// mode.
+/// Possible contents of the Q subchannel data depending on the mode.
 ///
 /// See section 22.3.2 of ECMA-130 for more details.
 pub enum QData {
@@ -276,12 +275,10 @@ pub enum QData {
     ///
     /// * Track number
     /// * Index
-    /// * MSF of this sector relative to the beginning of the track
-    ///   (index 01). In the prepap (index 00) it decreases until it
-    ///   reaches index 01 at 00:00:00.
-    /// * MSF of this sector relative to the beginning of the user
-    ///   data area. This is *not* an absolute MSF, you have to add 2
-    ///   minutes (150 sectors) to get an absolute MSF.
+    /// * MSF of this sector relative to the beginning of the track (index 01). In the prepap
+    ///   (index 00) it decreases until it reaches index 01 at 00:00:00.
+    /// * MSF of this sector relative to the beginning of the user data area. This is *not* an
+    ///   absolute MSF, you have to add 2 minutes (150 sectors) to get an absolute MSF.
     Mode1(Bcd, Bcd, Msf, Msf),
     /// Mode 1 Table of content entry (in the lead-in):
     ///
@@ -305,8 +302,8 @@ pub enum QData {
     /// * Absolute MSF of the lead-out track
     /// * MSF of this TOC entry in the lead-in
     Mode1TocLeadOut(Msf, Msf),
-    /// Unsupported or corrupted data. Use `Subchannel::raw()` if you
-    /// want to access the raw data directly for further processing.
+    /// Unsupported or corrupted data. Use `Subchannel::raw()` if you want to access the raw data
+    /// directly for further processing.
     Unsupported,
 }
 
@@ -320,8 +317,8 @@ pub struct SubChannelBasic {
 impl SubChannelBasic {
     /// Create a SubChannelBasic instance from 12 bytes of subchannel
     /// data.
-    pub fn new(raw: [u8; 12]) -> SubChannelQ {
-        SubChannelQ { bytes: raw }
+    pub fn new(raw: [u8; 12]) -> SubChannelBasic {
+        SubChannelBasic { bytes: raw }
     }
 }
 

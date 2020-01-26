@@ -87,7 +87,7 @@ impl CueParser {
 
             let params = self.split(buf)?;
 
-            if params.len() == 0 {
+            if params.is_empty() {
                 // Empty line
                 continue;
             }

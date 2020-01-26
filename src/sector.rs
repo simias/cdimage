@@ -90,7 +90,7 @@ impl Sector {
             panic!("Missing payload for a track!");
         }
 
-        Ok(XaSubHeader::new(array_ref![self.data, 16, 8]))
+        Ok(XaSubHeader::new(*array_ref![self.data, 16, 8]))
     }
 
     /// Retrieve a CD-ROM XA Mode 2 payload. Returns
@@ -167,7 +167,7 @@ bitflags! {
         /// tracks. Contains the sync pattern, MSF and mode of the
         /// sector. Some image formats don't store this information
         /// since it can be reconstructed easily.
-        const HEADER    = 0b00000001;
+        const HEADER    = 0b0000_0001;
         /// Sector data without the header and error
         /// detection/correction bits. The actual portion of the
         /// sector this represents varies depends on the sector
@@ -178,15 +178,15 @@ bitflags! {
         /// where this won't be set? Arguably we won't be able to get
         /// the payload in certain image formats (pregap in CUEs for
         /// instance) but then we can just fill them with zeroes?
-        const PAYLOAD   = 0b00000010;
+        const PAYLOAD   = 0b0000_0010;
         /// Error detection and correction bits (if applicable, always
         /// set for audio tracks).
-        const ECM       = 0b00000100;
+        const ECM       = 0b0000_0100;
         /// The entire 2352 bytes of sector data (everything except
         /// for the subchannel data)
         const DATA_2352 = Self::HEADER.bits | Self::PAYLOAD.bits | Self::ECM.bits;
         /// Set when the metadata is valid
-        const METADATA  = 0b00001000;
+        const METADATA  = 0b0000_1000;
     }
 }
 
@@ -210,17 +210,18 @@ pub struct XaSubHeader {
 impl XaSubHeader {
     /// Create a new XaSubHeader instance from the 8 bytes of
     /// `subheader` data.
-    pub fn new(subheader: &[u8; 8]) -> XaSubHeader {
+    pub fn new(subheader: [u8; 8]) -> XaSubHeader {
         XaSubHeader {
-            subheader: *subheader,
+            subheader,
         }
     }
 
     /// Return "form" of this sector
     pub fn form(&self) -> XaForm {
-        match self.subheader[2] & 0x20 != 0 {
-            false => XaForm::Form1,
-            true => XaForm::Form2,
+        if self.subheader[2] & 0x20 != 0 {
+            XaForm::Form1
+        } else {
+            XaForm::Form2
         }
     }
 }
@@ -254,7 +255,7 @@ impl<'a> SectorBuilder<'a> {
     pub fn new(sector: &mut Sector) -> SectorBuilder {
         sector.ready = DataReady::empty();
 
-        SectorBuilder { sector: sector }
+        SectorBuilder { sector }
     }
 
     /// Load up the full 2352 bytes of sector data. The `loader`
