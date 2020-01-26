@@ -226,7 +226,7 @@ impl<T> IndexCache<T> {
     /// counting the pregap. Also returns the position and a reference
     /// to the INDEX 01 for this track.
     pub fn track_length(&self, track: Bcd) -> Result<(Msf, usize, &Index<T>), CdError> {
-        let (pos01, index01) = try!(self.find_index01_for_track(track));
+        let (pos01, index01) = self.find_index01_for_track(track)?;
 
         // Iterate over the remaining indices to find the beginning of
         // the next track
@@ -254,7 +254,7 @@ impl<T> IndexCache<T> {
     pub fn track_msf(&self, track: Bcd, track_msf: Msf) -> Result<Msf, CdError> {
         // We need to make sure that `track_msf` is not bigger than
         // this tracks' length.
-        let (len, _, index01) = try!(self.track_length(track));
+        let (len, _, index01) = self.track_length(track)?;
 
         if track_msf < len {
             Ok(index01.msf() + track_msf)
@@ -272,18 +272,18 @@ impl<T> fmt::Debug for IndexCache<T> {
 
         for i in &self.indices {
             if i.session != session || force_display {
-                try!(writeln!(f, "Session {}:", i.session));
+                writeln!(f, "Session {}:", i.session)?;
                 session = i.session;
                 force_display = true;
             }
 
             if i.track != track || force_display {
-                try!(writeln!(f, "  Track {} {:?}:", i.track, i.format));
+                writeln!(f, "  Track {} {:?}:", i.track, i.format)?;
                 track = i.track;
                 force_display = false;
             }
 
-            try!(writeln!(f, "    Index {}: {}", i.index, i.msf()));
+            writeln!(f, "    Index {}: {}", i.index, i.msf())?;
         }
 
         writeln!(f, "Lead-out: {}", self.lead_out())

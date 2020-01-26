@@ -199,7 +199,7 @@ impl FromStr for Msf {
             }
 
             count += 1;
-            msf[i] = try!(Bcd::from_str(s));
+            msf[i] = Bcd::from_str(s)?;
         }
 
         if count != 3 {

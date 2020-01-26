@@ -64,10 +64,10 @@ impl CueParser {
             indices: Vec::new(),
         };
 
-        try!(parser.parse(&cue_sheet));
+        parser.parse(&cue_sheet)?;
 
         Ok(Cue {
-            indices: try!(IndexCache::new(parser.cue_path, parser.indices, parser.msf)),
+            indices: IndexCache::new(parser.cue_path, parser.indices, parser.msf)?,
             bin_files: parser.bin_files,
         })
     }
@@ -85,7 +85,7 @@ impl CueParser {
             self.pos = new_pos;
             self.line += 1;
 
-            let params = try!(self.split(buf));
+            let params = self.split(buf)?;
 
             if params.len() == 0 {
                 // Empty line
@@ -124,7 +124,7 @@ impl CueParser {
                         }
                     }
 
-                    try!(c(self, &params));
+                    c(self, &params)?;
                 }
                 None => {
                     let command = String::from_utf8_lossy(command);
@@ -135,7 +135,7 @@ impl CueParser {
             }
         }
 
-        try!(self.finalize_bin());
+        self.finalize_bin()?;
 
         Ok(())
     }
@@ -151,7 +151,7 @@ impl CueParser {
         let mut bin_name = params[1];
         let bin_type = params[2];
 
-        try!(self.finalize_bin());
+        self.finalize_bin()?;
 
         if bin_name[0] == b'"' {
             // The name was quoted, move past the quote (the end quote
@@ -189,7 +189,7 @@ impl CueParser {
         };
 
         // Open the new BIN blob
-        let bin = try!(BinaryBlob::new(&bin_path));
+        let bin = BinaryBlob::new(&bin_path)?;
 
         self.bin_files.push(bin);
         self.bin_len = size;
@@ -264,7 +264,7 @@ impl CueParser {
             Err(_) => return Err(self.error_str("Invalid index MSF")),
         };
 
-        try!(self.consume_bin_sectors(msf));
+        self.consume_bin_sectors(msf)?;
 
         self.msf = self.msf + msf;
 
@@ -405,7 +405,7 @@ impl CueParser {
 }
 
 fn read_file(cue: &Path, max_len: u64) -> Result<Vec<u8>, io::Error> {
-    let md = try!(metadata(cue));
+    let md = metadata(cue)?;
 
     let len = md.len();
 
@@ -416,13 +416,13 @@ fn read_file(cue: &Path, max_len: u64) -> Result<Vec<u8>, io::Error> {
         ));
     }
 
-    let mut file = try!(File::open(cue));
+    let mut file = File::open(cue)?;
 
     // Pre-allocate the vector since read_to_end uses the vector's
     // length (and not its capacity) as the base size for reading.
     let mut cue_sheet = Vec::with_capacity(len as usize);
 
-    try!(file.read_to_end(&mut cue_sheet));
+    file.read_to_end(&mut cue_sheet)?;
 
     Ok(cue_sheet)
 }

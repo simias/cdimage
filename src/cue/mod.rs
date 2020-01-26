@@ -94,7 +94,7 @@ impl Image for Cue {
                 let offset = offset + index_offset;
 
                 let res = builder.set_data_2352(|data| {
-                    try!(bin.file.seek(SeekFrom::Start(offset)));
+                    bin.file.seek(SeekFrom::Start(offset))?;
 
                     bin.file.read_exact(data)
                 });
