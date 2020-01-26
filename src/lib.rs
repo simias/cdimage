@@ -93,6 +93,9 @@ pub enum CdError {
     EndOfTrack,
 }
 
+/// Convenience type alias for a `Result<R, CdError>`
+pub type CdResult<R> = std::result::Result<R, CdError>;
+
 impl fmt::Display for CdError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
