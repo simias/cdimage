@@ -9,8 +9,6 @@ extern crate bitflags;
 #[macro_use]
 extern crate arrayref;
 
-extern crate rustc_serialize;
-
 use bcd::Bcd;
 use msf::Msf;
 use sector::Sector;
@@ -43,7 +41,7 @@ pub trait Image {
 }
 
 /// Possible session formats.
-#[derive(PartialEq, Eq, Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum SessionFormat {
     /// CD-DA (audio CD, "red book" specification) or CD-ROM ("yellow
     /// book" specification) session
@@ -57,7 +55,7 @@ pub enum SessionFormat {
 }
 
 /// Possible track types
-#[derive(PartialEq, Eq, Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum TrackFormat {
     /// CD-DA audio track (red book audio)
     Audio,

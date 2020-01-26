@@ -1,7 +1,5 @@
 //! CD sector interface.
 
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-
 use CdError;
 use TrackFormat;
 
@@ -10,7 +8,6 @@ use msf::Msf;
 
 /// Sector metadata, contains informations about the position and
 /// format of a given sector.
-#[derive(RustcDecodable, RustcEncodable)]
 pub struct Metadata {
     /// Absolute MSF of the sector
     pub msf: Msf,
@@ -111,57 +108,8 @@ impl Sector {
     }
 }
 
-impl Encodable for Sector {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_struct("Sector", 3, |s| {
-            s.emit_struct_field("ready", 0, |s| self.ready.encode(s))?;
-
-            s.emit_struct_field("data", 1, |s| s.emit_seq(2352, |s| {
-                for (i, &b) in self.data.iter().enumerate() {
-                    s.emit_seq_elt(i, |s| b.encode(s))?
-                }
-
-                Ok(())
-            }))?;
-
-            s.emit_struct_field("metadata", 2, |s| self.metadata.encode(s))?;
-
-            Ok(())
-        })
-    }
-}
-
-impl Decodable for Sector {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Sector, D::Error> {
-        d.read_struct("Sector", 3, |d| {
-            let mut sector = Sector::empty();
-
-            sector.ready = d.read_struct_field("ready", 0, Decodable::decode)?;
-
-            d.read_struct_field("data", 1, |d| {
-                d.read_seq(|d, len| {
-                    if len != 2352 {
-                        return Err(d.error("wrong sector data length"));
-                    }
-
-                    for i in 0..len {
-                        sector.data[i] = d.read_seq_elt(i, Decodable::decode)?;
-                    }
-
-                    Ok(len)
-                })
-            })?;
-
-            sector.metadata = d.read_struct_field("metadata", 2, Decodable::decode)?;
-
-            Ok(sector)
-        })
-    }
-}
-
 bitflags! {
     /// Bitflag holding the data ready to be read from the sector.
-    #[derive(RustcDecodable, RustcEncodable)]
     struct DataReady: u8 {
         /// 16byte sector header for CD-ROM and CDi data
         /// tracks. Contains the sync pattern, MSF and mode of the
@@ -211,9 +159,7 @@ impl XaSubHeader {
     /// Create a new XaSubHeader instance from the 8 bytes of
     /// `subheader` data.
     pub fn new(subheader: [u8; 8]) -> XaSubHeader {
-        XaSubHeader {
-            subheader,
-        }
+        XaSubHeader { subheader }
     }
 
     /// Return "form" of this sector

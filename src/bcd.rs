@@ -6,14 +6,13 @@
 use std::fmt;
 use std::str::FromStr;
 
-/// A single packed BCD value in the range 0-99 (2 digits, 4bits per
-/// digit).
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
+/// A single packed BCD value in the range 0-99 (2 digits, 4bits per digit).
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Bcd(u8);
 
 impl Bcd {
-    /// Build a `Bcd` from an `u8` in BCD format. Returns `None` if
-    /// the value provided is not valid BCD.
+    /// Build a `Bcd` from an `u8` in BCD format. Returns `None` if the value provided is not valid
+    /// BCD.
     pub fn from_bcd(b: u8) -> Option<Bcd> {
         if b <= 0x99 && (b & 0xf) <= 0x9 {
             Some(Bcd(b))
@@ -22,8 +21,7 @@ impl Bcd {
         }
     }
 
-    /// Build a `Bcd` from a binary `u8`. Returns `None` if the value
-    /// is greater than 0x99.
+    /// Build a `Bcd` from a binary `u8`. Returns `None` if the value is greater than 0x99.
     pub fn from_binary(b: u8) -> Option<Bcd> {
         if b > 99 {
             None
@@ -54,8 +52,7 @@ impl Bcd {
         (b >> 4) * 10 + (b & 0xf)
     }
 
-    /// Returns the BCD value plus one. Wrap to 0 if `self` is equal
-    /// to 99.
+    /// Returns the BCD value plus one. Wrap to 0 if `self` is equal to 99.
     pub fn wrapping_next(self) -> Bcd {
         let b = self.bcd();
 
