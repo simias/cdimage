@@ -11,6 +11,7 @@ use bcd::Bcd;
 use msf::Msf;
 
 use CdError;
+use CdResult;
 use TrackFormat;
 
 /// A generic CD index implementation. Each image format can
@@ -137,7 +138,7 @@ impl<T> IndexCache<T> {
         file: PathBuf,
         mut indices: Vec<Index<T>>,
         lead_out: Msf,
-    ) -> Result<IndexCache<T>, CdError> {
+    ) -> CdResult<IndexCache<T>> {
         if indices.is_empty() {
             return Err(CdError::BadImage(file, "Empty disc".to_string()));
         }
@@ -204,7 +205,7 @@ impl<T> IndexCache<T> {
         &self,
         track: Bcd,
         index: Bcd,
-    ) -> Result<(usize, &Index<T>), CdError> {
+    ) -> CdResult<(usize, &Index<T>)> {
         match self
             .indices
             .binary_search_by(|idx| match idx.track().cmp(&track) {
@@ -218,14 +219,14 @@ impl<T> IndexCache<T> {
 
     /// Locate index1 for `track` and return its position along with a
     /// reference to the `Index` struct.
-    pub fn find_index01_for_track(&self, track: Bcd) -> Result<(usize, &Index<T>), CdError> {
+    pub fn find_index01_for_track(&self, track: Bcd) -> CdResult<(usize, &Index<T>)> {
         self.find_index_for_track(track, Bcd::one())
     }
 
     /// Return the length of the given track starting at INDEX 01, not
     /// counting the pregap. Also returns the position and a reference
     /// to the INDEX 01 for this track.
-    pub fn track_length(&self, track: Bcd) -> Result<(Msf, usize, &Index<T>), CdError> {
+    pub fn track_length(&self, track: Bcd) -> CdResult<(Msf, usize, &Index<T>)> {
         let (pos01, index01) = self.find_index01_for_track(track)?;
 
         // Iterate over the remaining indices to find the beginning of
@@ -251,7 +252,7 @@ impl<T> IndexCache<T> {
     /// Return the absolute Msf for the position `track_msf` in
     /// `track`. Will return an error if the `track_msf` is outside of
     /// the track or if `track` doesn't exist.
-    pub fn track_msf(&self, track: Bcd, track_msf: Msf) -> Result<Msf, CdError> {
+    pub fn track_msf(&self, track: Bcd, track_msf: Msf) -> CdResult<Msf> {
         // We need to make sure that `track_msf` is not bigger than
         // this tracks' length.
         let (len, _, index01) = self.track_length(track)?;

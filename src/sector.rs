@@ -1,6 +1,7 @@
 //! CD sector interface.
 
 use CdError;
+use CdResult;
 use TrackFormat;
 
 use bcd::Bcd;
@@ -56,7 +57,7 @@ impl Sector {
 
     /// Retreive the entire sector data (except for the subchannel
     /// data).
-    pub fn data_2352(&mut self) -> Result<&[u8; 2352], CdError> {
+    pub fn data_2352(&mut self) -> CdResult<&[u8; 2352]> {
         if self.ready.contains(DataReady::DATA_2352) {
             Ok(&self.data)
         } else {
@@ -73,7 +74,7 @@ impl Sector {
 
     /// Retrieve the CD-ROM XA Mode2 subheader. Returns
     /// `CdError::BadFormat` if this is not a CD-ROM XA sector.
-    pub fn mode2_xa_subheader(&self) -> Result<XaSubHeader, CdError> {
+    pub fn mode2_xa_subheader(&self) -> CdResult<XaSubHeader> {
         // Should we allow CDi tracks as well? Probably, but it's not
         // like I have a CDi image to test at the moment...
         if self.metadata.format != TrackFormat::Mode2Xa {
@@ -96,7 +97,7 @@ impl Sector {
     /// For Form 1 tracks the slice returned will be either be 2048 or
     /// 2324 bytes long depending on whether the sector is form 1 or
     /// form 2 respectively.
-    pub fn mode2_xa_payload(&self) -> Result<&[u8], CdError> {
+    pub fn mode2_xa_payload(&self) -> CdResult<&[u8]> {
         let subheader = self.mode2_xa_subheader()?;
 
         let payload = match subheader.form() {

@@ -16,6 +16,7 @@ use internal::IndexCache;
 use msf::Msf;
 use sector::{Metadata, Sector, SectorBuilder};
 use CdError;
+use CdResult;
 use Image;
 
 use self::parser::CueParser;
@@ -34,7 +35,7 @@ pub struct Cue {
 impl Cue {
     /// Parse a CUE sheet, open the BIN files and build a `Cue`
     /// instance.
-    pub fn new(cue_path: &Path) -> Result<Cue, CdError> {
+    pub fn new(cue_path: &Path) -> CdResult<Cue> {
         CueParser::build_cue(cue_path)
     }
 }
@@ -44,7 +45,7 @@ impl Image for Cue {
         "CUE".to_string()
     }
 
-    fn read_sector(&mut self, sector: &mut Sector, msf: Msf) -> Result<(), CdError> {
+    fn read_sector(&mut self, sector: &mut Sector, msf: Msf) -> CdResult<()> {
         let (pos, index) = match self.indices.find_index_for_msf(msf) {
             Some(i) => i,
             None => return Err(CdError::LeadOut),
@@ -119,7 +120,7 @@ impl Image for Cue {
         Ok(())
     }
 
-    fn track_msf(&self, track: Bcd, track_msf: Msf) -> Result<Msf, CdError> {
+    fn track_msf(&self, track: Bcd, track_msf: Msf) -> CdResult<Msf> {
         self.indices.track_msf(track, track_msf)
     }
 }
@@ -179,7 +180,7 @@ struct BinaryBlob {
 }
 
 impl BinaryBlob {
-    fn new(path: &Path) -> Result<BinaryBlob, CdError> {
+    fn new(path: &Path) -> CdResult<BinaryBlob> {
         let file = match File::open(path) {
             Ok(f) => f,
             Err(e) => return Err(CdError::IoError(e)),

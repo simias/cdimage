@@ -6,6 +6,7 @@ use std::str::FromStr;
 
 use internal::{Index, IndexCache};
 use CdError;
+use CdResult;
 use TrackFormat;
 
 use bcd::Bcd;
@@ -42,7 +43,7 @@ pub struct CueParser {
 impl CueParser {
     /// Parse a CUE sheet, open the BIN files and generate the CD
     /// structure
-    pub fn build_cue(cue_path: &Path) -> Result<Cue, CdError> {
+    pub fn build_cue(cue_path: &Path) -> CdResult<Cue> {
         let cue_sheet = match read_file(cue_path, CUE_SHEET_MAX_LENGTH) {
             Ok(c) => c,
             Err(e) => return Err(CdError::IoError(e)),
@@ -80,7 +81,7 @@ impl CueParser {
         self.error(msg.to_string())
     }
 
-    fn parse(&mut self, cue_sheet: &[u8]) -> Result<(), CdError> {
+    fn parse(&mut self, cue_sheet: &[u8]) -> CdResult<()> {
         while let Some((new_pos, buf)) = next_line(cue_sheet, self.pos) {
             self.pos = new_pos;
             self.line += 1;
@@ -94,7 +95,7 @@ impl CueParser {
 
             let command = params[0];
 
-            type Callback = fn(&mut CueParser, &[&[u8]]) -> Result<(), CdError>;
+            type Callback = fn(&mut CueParser, &[&[u8]]) -> CdResult<()>;
 
             let handlers: [(&'static [u8], Callback, Option<u32>); 4] = [
                 (b"REM", CueParser::command_rem, None),
@@ -141,13 +142,13 @@ impl CueParser {
     }
 
     /// REM comment
-    fn command_rem(&mut self, _: &[&[u8]]) -> Result<(), CdError> {
+    fn command_rem(&mut self, _: &[&[u8]]) -> CdResult<()> {
         // REM is used for comments, we can ignore this line
         Ok(())
     }
 
     /// FILE filename filetype
-    fn command_file(&mut self, params: &[&[u8]]) -> Result<(), CdError> {
+    fn command_file(&mut self, params: &[&[u8]]) -> CdResult<()> {
         let mut bin_name = params[1];
         let bin_type = params[2];
 
@@ -201,7 +202,7 @@ impl CueParser {
     }
 
     /// TRACK number datatype
-    fn command_track(&mut self, params: &[&[u8]]) -> Result<(), CdError> {
+    fn command_track(&mut self, params: &[&[u8]]) -> CdResult<()> {
         if self.bin_files.is_empty() {
             return Err(self.error_str("File-less track"));
         }
@@ -248,7 +249,7 @@ impl CueParser {
     }
 
     /// INDEX number mm:ss:ff
-    fn command_index(&mut self, params: &[&[u8]]) -> Result<(), CdError> {
+    fn command_index(&mut self, params: &[&[u8]]) -> CdResult<()> {
         let (track_number, track_type, track_format) = match self.track {
             Some(t) => t,
             None => return Err(self.error_str("Track-less index")),
@@ -292,7 +293,7 @@ impl CueParser {
     /// and treats them as a single word but returns them with the
     /// first quote included (to detect elements that shouldn't be
     /// quoted in the first place).
-    pub fn split<'a>(&self, line: &'a [u8]) -> Result<Vec<&'a [u8]>, CdError> {
+    pub fn split<'a>(&self, line: &'a [u8]) -> CdResult<Vec<&'a [u8]>> {
         let mut pos = 0;
         let len = line.len();
         let mut in_word = None;
@@ -341,7 +342,7 @@ impl CueParser {
 
     /// Advance in the current BIN file, updating how many bytes are
     /// left to consume.
-    fn consume_bin_sectors(&mut self, offset: Msf) -> Result<(), CdError> {
+    fn consume_bin_sectors(&mut self, offset: Msf) -> CdResult<()> {
         let delta = offset - self.index_msf;
 
         let delta = delta.sector_index() as u64;
@@ -373,7 +374,7 @@ impl CueParser {
 
     /// We're done with this bin file which means that whatever's left
     /// of it is for the last index.
-    fn finalize_bin(&mut self) -> Result<(), CdError> {
+    fn finalize_bin(&mut self) -> CdResult<()> {
         let ty = match self.index_type {
             Some(t) => t,
             // No previous index, nothing to be done
