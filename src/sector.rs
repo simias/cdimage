@@ -9,6 +9,7 @@ use msf::Msf;
 
 /// Sector metadata, contains informations about the position and
 /// format of a given sector.
+#[derive(Clone)]
 pub struct Metadata {
     /// Absolute MSF of the sector
     pub msf: Msf,
@@ -28,6 +29,7 @@ pub struct Metadata {
 /// Structure containing a single sector. For better peformance it
 /// tries to be as lazy as possible and regenerate missing sector data
 /// only if it's requested.
+#[derive(Clone)]
 pub struct Sector {
     /// Which portions of `data` are currently valid
     ready: DataReady,
