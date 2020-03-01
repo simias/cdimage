@@ -83,6 +83,11 @@ impl Toc {
 
         self.tracks.get((t - 1) as usize).ok_or(CdError::BadTrack)
     }
+
+    /// Return the full track list
+    pub fn tracks(&self) -> &[Track] {
+        &self.tracks
+    }
 }
 
 /// Possible session formats.

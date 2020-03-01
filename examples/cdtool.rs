@@ -23,8 +23,6 @@ fn main() {
 
     match cdimage::cue::Cue::new(Path::new(file)) {
         Ok(mut c) => {
-            println!("{:?}", c);
-
             let mut sector = c.read_sector(msf).unwrap();
 
             println!("form: {:?}", sector.mode2_xa_subheader().unwrap().form());
