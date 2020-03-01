@@ -24,12 +24,13 @@ use self::parser::CueParser;
 mod parser;
 
 /// CUE parser state.
-#[derive(Debug)]
 pub struct Cue {
     /// Cache of all the indices in the CD image
     indices: IndexCache<Storage>,
     /// List of all the BIN files referenced in the cue sheet
     bin_files: Vec<BinaryBlob>,
+    /// Table of contents
+    toc: Toc,
 }
 
 impl Cue {
@@ -122,8 +123,8 @@ impl Image for Cue {
         Ok(sector)
     }
 
-    fn toc(&self) -> Toc {
-        self.indices.toc()
+    fn toc(&self) -> &Toc {
+        &self.toc
     }
 }
 

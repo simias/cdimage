@@ -67,9 +67,13 @@ impl CueParser {
 
         parser.parse(&cue_sheet)?;
 
+        let indices = IndexCache::new(parser.cue_path, parser.indices, parser.msf)?;
+        let toc = indices.toc();
+
         Ok(Cue {
-            indices: IndexCache::new(parser.cue_path, parser.indices, parser.msf)?,
+            indices,
             bin_files: parser.bin_files,
+            toc,
         })
     }
 

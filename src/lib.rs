@@ -36,7 +36,7 @@ pub trait Image {
     fn read_sector(&mut self, Msf) -> CdResult<Sector>;
 
     /// Get the table of contents
-    fn toc(&self) -> Toc;
+    fn toc(&self) -> &Toc;
 }
 
 /// Struct representing a track's attributes
