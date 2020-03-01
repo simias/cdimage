@@ -12,7 +12,9 @@ use msf::Msf;
 
 use CdError;
 use CdResult;
+use Track;
 use TrackFormat;
+use Toc;
 
 /// A generic CD index implementation. Each image format can
 /// specialize it by adding its own `private` implementation.
@@ -261,6 +263,35 @@ impl<T> IndexCache<T> {
             Ok(index01.msf() + track_msf)
         } else {
             Err(CdError::EndOfTrack)
+        }
+    }
+
+
+    /// Build a table of contents with the current cache's contents
+    pub fn toc(&self) -> Toc {
+        let track_count = self.indices.last().map(|i| i.track).unwrap_or(Bcd::zero());
+        let mut tracks = Vec::with_capacity(track_count.binary() as usize);
+        for b in 1..=99 {
+            let track_no = Bcd::from_binary(b).unwrap();
+
+            match self.track_length(track_no) {
+                Ok((len, _ , idx)) => {
+                    let track = Track {
+                        track: track_no,
+                        format: idx.format,
+                        start: idx.msf(),
+                        length: len,
+                    };
+
+                    tracks.push(track);
+                }
+                // Last track
+                Err(_) => break,
+            }
+        }
+
+        Toc {
+            tracks
         }
     }
 }

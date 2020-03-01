@@ -35,10 +35,52 @@ pub trait Image {
     /// Read a single sector at the given MSF
     fn read_sector(&mut self, Msf) -> CdResult<Sector>;
 
-    /// Return the absolute Msf for the position `track_msf` in
-    /// `track`. Will return an error if the `track_msf` is outside of
-    /// the track or if `track` doesn't exist.
-    fn track_msf(&self, track: Bcd, track_msf: Msf) -> CdResult<Msf>;
+    /// Get the table of contents
+    fn toc(&self) -> Toc;
+}
+
+/// Struct representing a track's attributes
+pub struct Track {
+    /// Track number
+    pub track: Bcd,
+    /// Track format
+    pub format: TrackFormat,
+    /// Absolute MSF for the first sector of the track
+    pub start: Msf,
+    /// Length of the track
+    pub length: Msf,
+}
+
+impl Track {
+    /// Return the absolute Msf for the position `track_msf` in `track`. Will return an error if
+    /// the `track_msf` is outside of the track.
+    pub fn absolute_msf(&self, track_msf: Msf) -> CdResult<Msf> {
+        if track_msf < self.length {
+            Ok(self.start + track_msf)
+        } else {
+            Err(CdError::EndOfTrack)
+        }
+    }
+}
+
+/// Table of contents
+pub struct Toc {
+    /// Track list
+    tracks: Vec<Track>,
+}
+
+impl Toc {
+    /// Return the Track description for the given `track_no`. Returns `None` if `track_no` is 0 or
+    /// greater than the total number of tracks.
+    pub fn get_track(&self, track_no: Bcd) -> Option<&Track> {
+        let t = track_no.binary();
+
+        if t < 1 {
+            return None;
+        }
+
+        self.tracks.get((t - 1) as usize)
+    }
 }
 
 /// Possible session formats.

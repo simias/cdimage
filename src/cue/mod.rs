@@ -11,13 +11,13 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use bcd::Bcd;
 use internal::IndexCache;
 use msf::Msf;
 use sector::{Metadata, Sector, SectorBuilder};
 use CdError;
 use CdResult;
 use Image;
+use Toc;
 
 use self::parser::CueParser;
 
@@ -122,8 +122,8 @@ impl Image for Cue {
         Ok(sector)
     }
 
-    fn track_msf(&self, track: Bcd, track_msf: Msf) -> CdResult<Msf> {
-        self.indices.track_msf(track, track_msf)
+    fn toc(&self) -> Toc {
+        self.indices.toc()
     }
 }
 
