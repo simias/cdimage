@@ -4,7 +4,6 @@ use std::path::Path;
 use std::str::FromStr;
 
 use cdimage::msf::Msf;
-use cdimage::sector::Sector;
 use cdimage::Image;
 
 fn main() {
@@ -26,9 +25,7 @@ fn main() {
         Ok(mut c) => {
             println!("{:?}", c);
 
-            let mut sector = Sector::empty();
-
-            c.read_sector(&mut sector, msf).unwrap();
+            let mut sector = c.read_sector(msf).unwrap();
 
             println!("form: {:?}", sector.mode2_xa_subheader().unwrap().form());
             println!("format: {:?}", sector.metadata().format);

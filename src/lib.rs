@@ -15,6 +15,7 @@ use sector::Sector;
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
+use std::clone::Clone;
 
 pub mod bcd;
 pub mod crc;
@@ -32,7 +33,7 @@ pub trait Image {
     fn image_format(&self) -> String;
 
     /// Read a single sector at the given MSF
-    fn read_sector(&mut self, &mut Sector, Msf) -> CdResult<()>;
+    fn read_sector(&mut self, Msf) -> CdResult<Sector>;
 
     /// Return the absolute Msf for the position `track_msf` in
     /// `track`. Will return an error if the `track_msf` is outside of
@@ -91,6 +92,25 @@ pub enum CdError {
     BadTrack,
     /// Attempted to access a track past its end
     EndOfTrack,
+}
+
+/// We want CdError to be clone-able in order to allow caching easily.
+impl Clone for CdError {
+    fn clone(&self) -> Self {
+        match self {
+            // IoError can't be cloned, attempt a best-effort workaround
+            CdError::IoError(ref e) => {
+                let new =
+                    match e.raw_os_error() {
+                        Some(c) => io::Error::from_raw_os_error(c),
+                        None => io::Error::new(e.kind(), "Unknown"),
+                    };
+
+                CdError::IoError(new)
+            }
+            e => e.clone(),
+        }
+    }
 }
 
 /// Convenience type alias for a `Result<R, CdError>`

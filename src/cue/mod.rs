@@ -45,7 +45,7 @@ impl Image for Cue {
         "CUE".to_string()
     }
 
-    fn read_sector(&mut self, sector: &mut Sector, msf: Msf) -> CdResult<()> {
+    fn read_sector(&mut self, msf: Msf) -> CdResult<Sector> {
         let (pos, index) = match self.indices.find_index_for_msf(msf) {
             Some(i) => i,
             None => return Err(CdError::LeadOut),
@@ -77,7 +77,9 @@ impl Image for Cue {
             msf - index1.msf()
         };
 
-        let mut builder = SectorBuilder::new(sector);
+        let mut sector = Sector::empty();
+
+        let mut builder = SectorBuilder::new(&mut sector);
 
         // First let's read the sector data
         match index.private() {
@@ -117,7 +119,7 @@ impl Image for Cue {
             session: index.session(),
         });
 
-        Ok(())
+        Ok(sector)
     }
 
     fn track_msf(&self, track: Bcd, track_msf: Msf) -> CdResult<Msf> {
