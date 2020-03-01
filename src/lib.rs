@@ -40,6 +40,7 @@ pub trait Image {
 }
 
 /// Struct representing a track's attributes
+#[derive(Clone)]
 pub struct Track {
     /// Track number
     pub track: Bcd,
@@ -64,22 +65,23 @@ impl Track {
 }
 
 /// Table of contents
+#[derive(Clone)]
 pub struct Toc {
     /// Track list
     tracks: Vec<Track>,
 }
 
 impl Toc {
-    /// Return the Track description for the given `track_no`. Returns `None` if `track_no` is 0 or
-    /// greater than the total number of tracks.
-    pub fn get_track(&self, track_no: Bcd) -> Option<&Track> {
+    /// Return the Track description for the given `track_no`. Returns an error if `track_no` is 0
+    /// or greater than the total number of tracks.
+    pub fn track(&self, track_no: Bcd) -> CdResult<&Track> {
         let t = track_no.binary();
 
         if t < 1 {
-            return None;
+            return Err(CdError::BadTrack);
         }
 
-        self.tracks.get((t - 1) as usize)
+        self.tracks.get((t - 1) as usize).ok_or(CdError::BadTrack)
     }
 }
 
