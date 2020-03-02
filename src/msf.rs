@@ -5,6 +5,7 @@
 //! There are 75 frames/sectors in a second, 60 seconds in a
 //! minute. All three components are stored as BCD.
 
+use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::{cmp, fmt, ops};
 
@@ -131,6 +132,12 @@ impl Msf {
         let Msf(m, s, f) = self;
 
         ((m.bcd() as u32) << 16) | ((s.bcd() as u32) << 8) | (f.bcd() as u32)
+    }
+}
+
+impl Hash for Msf {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_u32_bcd().hash(state);
     }
 }
 

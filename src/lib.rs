@@ -12,10 +12,10 @@ extern crate arrayref;
 use bcd::Bcd;
 use msf::Msf;
 use sector::Sector;
+use std::clone::Clone;
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
-use std::clone::Clone;
 
 pub mod bcd;
 pub mod crc;
@@ -149,11 +149,10 @@ impl Clone for CdError {
         match self {
             // IoError can't be cloned, attempt a best-effort workaround
             CdError::IoError(ref e) => {
-                let new =
-                    match e.raw_os_error() {
-                        Some(c) => io::Error::from_raw_os_error(c),
-                        None => io::Error::new(e.kind(), "Unknown"),
-                    };
+                let new = match e.raw_os_error() {
+                    Some(c) => io::Error::from_raw_os_error(c),
+                    None => io::Error::new(e.kind(), "Unknown"),
+                };
 
                 CdError::IoError(new)
             }

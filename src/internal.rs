@@ -12,9 +12,9 @@ use msf::Msf;
 
 use CdError;
 use CdResult;
+use Toc;
 use Track;
 use TrackFormat;
-use Toc;
 
 /// A generic CD index implementation. Each image format can
 /// specialize it by adding its own `private` implementation.
@@ -203,11 +203,7 @@ impl<T> IndexCache<T> {
 
     /// Locate `index` for `track` and return its position along with
     /// a reference to the `Index` struct.
-    pub fn find_index_for_track(
-        &self,
-        track: Bcd,
-        index: Bcd,
-    ) -> CdResult<(usize, &Index<T>)> {
+    pub fn find_index_for_track(&self, track: Bcd, index: Bcd) -> CdResult<(usize, &Index<T>)> {
         match self
             .indices
             .binary_search_by(|idx| match idx.track().cmp(&track) {
@@ -266,7 +262,6 @@ impl<T> IndexCache<T> {
         }
     }
 
-
     /// Build a table of contents with the current cache's contents
     pub fn toc(&self) -> Toc {
         let track_count = self.indices.last().map(|i| i.track).unwrap_or(Bcd::zero());
@@ -275,7 +270,7 @@ impl<T> IndexCache<T> {
             let track_no = Bcd::from_binary(b).unwrap();
 
             match self.track_length(track_no) {
-                Ok((len, _ , idx)) => {
+                Ok((len, _, idx)) => {
                     let track = Track {
                         track: track_no,
                         format: idx.format,
@@ -290,9 +285,7 @@ impl<T> IndexCache<T> {
             }
         }
 
-        Toc {
-            tracks
-        }
+        Toc { tracks }
     }
 }
 
