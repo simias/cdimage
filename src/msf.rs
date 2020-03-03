@@ -137,7 +137,11 @@ impl Msf {
 
 impl Hash for Msf {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.as_u32_bcd().hash(state);
+        let Msf(m, s, f) = self;
+
+        let v = [m.bcd(), s.bcd(), f.bcd()];
+
+        state.write(&v);
     }
 }
 
