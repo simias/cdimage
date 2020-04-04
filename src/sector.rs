@@ -78,7 +78,7 @@ impl Sector {
         let header = self.cd_rom_header_raw()?;
 
         // Validate sync pattern
-        if header[0] != 0 || header[12] != 0 {
+        if header[0] != 0 || header[11] != 0 {
             return Err(CdError::BadSyncPattern);
         }
         for i in 1..11 {
