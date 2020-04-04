@@ -242,8 +242,7 @@ impl CueParser {
         self.track = Some((n, t, f));
 
         if n.binary() == 1 {
-            // CUE always ignores track 1's pregap, let's add it in
-            // here
+            // CUE always ignores track 1's pregap, let's add it in here
             let pregap = Index::new(Bcd::zero(), Msf::zero(), n, f, 0, Storage::PreGap);
 
             self.indices.push(pregap);

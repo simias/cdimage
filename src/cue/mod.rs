@@ -54,8 +54,7 @@ impl Image for Cue {
 
         // First we compute the relative track MSF
         let track_msf = if index.is_pregap() {
-            // In the pregap the track MSF decreases until index1
-            // is reached
+            // In the pregap the track MSF decreases until index1 is reached
             let index1 = match self.indices.get(pos + 1) {
                 Some(i) => i,
                 None => panic!("Pregap without index 1!"),
@@ -78,9 +77,17 @@ impl Image for Cue {
             msf - index1.msf()
         };
 
-        let mut sector = Sector::empty();
+        let mut builder = SectorBuilder::new();
 
-        let mut builder = SectorBuilder::new(&mut sector);
+        // Fill sector metadata
+        builder.set_metadata(Metadata {
+            msf,
+            track_msf,
+            index: index.index(),
+            track: index.track(),
+            format: index.format(),
+            session: index.session(),
+        });
 
         // First let's read the sector data
         match index.private() {
@@ -107,20 +114,13 @@ impl Image for Cue {
                     return Err(CdError::IoError(e));
                 }
             }
-            Storage::PreGap => panic!("Unhandled CUE pregap read"),
+            Storage::PreGap => {
+                // We don't have data for this track, we'll let Sector generate it on the fly if
+                // needed
+            }
         }
 
-        // Now let's fill up the metadata
-        builder.set_metadata(Metadata {
-            msf,
-            track_msf,
-            index: index.index(),
-            track: index.track(),
-            format: index.format(),
-            session: index.session(),
-        });
-
-        Ok(sector)
+        Ok(builder.unwrap())
     }
 
     fn toc(&self) -> &Toc {

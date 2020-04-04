@@ -1,5 +1,5 @@
-//! This module provides generic reusable structures to easily store
-//! and lookup a CD's structure in an image format implementation.
+//! This module provides generic reusable structures to easily store and lookup a CD's structure in
+//! an image format implementation.
 //!
 //! Those are only useful for implementing a new image format backend.
 
@@ -16,11 +16,10 @@ use Toc;
 use Track;
 use TrackFormat;
 
-/// A generic CD index implementation. Each image format can
-/// specialize it by adding its own `private` implementation.
+/// A generic CD index implementation. Each image format can specialize it by adding its own
+/// `private` implementation.
 pub struct Index<T> {
-    /// Sector pointed at by this index. Stored as an absolute sector
-    /// index.
+    /// Sector pointed at by this index. Stored as an absolute sector index.
     sector_index: u32,
     /// Index number
     index: Bcd,

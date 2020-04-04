@@ -196,6 +196,8 @@ bitflags! {
         const ECM       = 0b0000_0100;
         /// The entire 2352 bytes of sector data (everything except for the subchannel data)
         const DATA_2352 = Self::HEADER.bits | Self::PAYLOAD.bits | Self::ECM.bits;
+        /// Set when the metadata is valid
+        const METADATA  = 0b0000_1000;
     }
 }
 
@@ -266,17 +268,17 @@ pub enum XaForm {
 }
 
 /// Interface used to build a new sector "in place" to avoid copying sector data around.
-pub struct SectorBuilder<'a> {
-    sector: &'a mut Sector,
+pub struct SectorBuilder {
+    sector: Sector,
 }
 
-impl<'a> SectorBuilder<'a> {
+impl SectorBuilder {
     /// Create a new SectorBuilder using `sector` for storage. The contents of `sector` will be
     /// reset.
-    pub fn new(sector: &mut Sector) -> SectorBuilder {
-        sector.ready = DataReady::empty();
-
-        SectorBuilder { sector }
+    pub fn new() -> SectorBuilder {
+        SectorBuilder {
+            sector: Sector::empty(),
+        }
     }
 
     /// Load up the full 2352 bytes of sector data. The `loader` function will be called with a
@@ -293,8 +295,16 @@ impl<'a> SectorBuilder<'a> {
         Ok(())
     }
 
-    /// Set the metadata for the sector
+    /// Set the metadata for the sector.
     pub fn set_metadata(&mut self, metadata: Metadata) {
         self.sector.metadata = metadata;
+        self.sector.ready.insert(DataReady::METADATA);
+    }
+
+    /// Returns the underlying sector. Panics if the sector's metadata hasn't been set.
+    pub fn unwrap(self) -> Sector {
+        assert!(self.sector.ready.contains(DataReady::METADATA));
+
+        self.sector
     }
 }
