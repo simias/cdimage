@@ -7,14 +7,12 @@ use TrackFormat;
 use bcd::Bcd;
 use msf::Msf;
 
-/// Sector metadata, contains informations about the position and
-/// format of a given sector.
+/// Sector metadata, contains informations about the position and format of a given sector.
 #[derive(Clone)]
 pub struct Metadata {
     /// Absolute MSF of the sector
     pub msf: Msf,
-    /// Relative MSF within the current track (decrements in the
-    /// pregap/index0)
+    /// Relative MSF within the current track (decrements in the pregap/index0)
     pub track_msf: Msf,
     /// Index containing this sector
     pub index: Bcd,
@@ -26,15 +24,13 @@ pub struct Metadata {
     pub session: u8,
 }
 
-/// Structure containing a single sector. For better peformance it
-/// tries to be as lazy as possible and regenerate missing sector data
-/// only if it's requested.
+/// Structure containing a single sector. For better peformance it tries to be as lazy as possible
+/// and regenerate missing sector data only if it's requested.
 #[derive(Clone)]
 pub struct Sector {
     /// Which portions of `data` are currently valid
     ready: DataReady,
-    /// Actual sector data, only the portions set in `ready` are
-    /// currently valid.
+    /// Actual sector data, only the portions set in `ready` are currently valid.
     data: [u8; 2352],
     /// Sector metadata
     metadata: Metadata,
@@ -57,8 +53,7 @@ impl Sector {
         }
     }
 
-    /// Retreive the entire sector data (except for the subchannel
-    /// data).
+    /// Retreive the entire sector data (except for the subchannel data).
     pub fn data_2352(&mut self) -> CdResult<&[u8; 2352]> {
         if self.ready.contains(DataReady::DATA_2352) {
             Ok(&self.data)
@@ -67,15 +62,88 @@ impl Sector {
         }
     }
 
-    /// Retreive the sector's metadata. This is *not* the subchannel
-    /// data, the sector position is where it's expected to be based
-    /// on the CD's table of contents, not based on subchannel Q data.
+    /// Returns the raw 16bit CD-ROM header for this sector. Returns an error if this is not a
+    /// CD-ROM track. If the header wasn't available in the original image format, it will be
+    /// created on the fly.
+    pub fn cd_rom_header_raw(&mut self) -> CdResult<&[u8; 16]> {
+        if !self.ready.contains(DataReady::HEADER) {
+            self.build_cd_rom_header()?;
+        }
+
+        Ok(array_ref![self.data, 0, 16])
+    }
+
+    /// Parse the CD-ROM header and return it. Uses `cd_rom_header_raw` internally.
+    pub fn cd_rom_header(&mut self) -> CdResult<CdRomHeader> {
+        let header = self.cd_rom_header_raw()?;
+
+        // Validate sync pattern
+        if header[0] != 0 || header[12] != 0 {
+            return Err(CdError::BadSyncPattern);
+        }
+        for i in 1..11 {
+            if header[i] != 0xff {
+                return Err(CdError::BadSyncPattern);
+            }
+        }
+
+        let m = header[12];
+        let s = header[13];
+        let f = header[14];
+
+        let msf = match Msf::from_bcd(m, s, f) {
+            Some(msf) => msf,
+            None => return Err(CdError::BadBcd),
+        };
+
+        let mode = match header[15] {
+            1 => CdRomMode::Mode1,
+            2 => CdRomMode::Mode2,
+            _ => return Err(CdError::BadFormat),
+        };
+
+        Ok(CdRomHeader { msf, mode })
+    }
+
+    fn build_cd_rom_header(&mut self) -> CdResult<()> {
+        let mode = match self.metadata.format {
+            TrackFormat::Mode1 => CdRomMode::Mode1,
+            TrackFormat::Mode2Xa => CdRomMode::Mode2,
+            TrackFormat::Mode2CdI => CdRomMode::Mode2,
+            _ => return Err(CdError::BadFormat),
+        };
+
+        let msf = self.metadata.msf.into_bcd();
+
+        // CD-ROM Sync pattern
+        self.data[0] = 0;
+        for i in 1..11 {
+            self.data[i] = 0xff;
+        }
+        self.data[11] = 0;
+
+        // Sector MSF
+        self.data[12] = msf.0.bcd();
+        self.data[13] = msf.1.bcd();
+        self.data[14] = msf.2.bcd();
+
+        // Sector mode
+        self.data[15] = mode as u8;
+
+        self.ready.insert(DataReady::HEADER);
+
+        Ok(())
+    }
+
+    /// Retreive the sector's metadata. This is *not* the subchannel data, the sector position is
+    /// where it's expected to be based on the CD's table of contents, not based on subchannel Q
+    /// data.
     pub fn metadata(&self) -> &Metadata {
         &self.metadata
     }
 
-    /// Retrieve the CD-ROM XA Mode2 subheader. Returns
-    /// `CdError::BadFormat` if this is not a CD-ROM XA sector.
+    /// Retrieve the CD-ROM XA Mode2 subheader. Returns `CdError::BadFormat` if this is not a
+    /// CD-ROM XA sector.
     pub fn mode2_xa_subheader(&self) -> CdResult<XaSubHeader> {
         // Should we allow CDi tracks as well? Probably, but it's not
         // like I have a CDi image to test at the moment...
@@ -85,20 +153,18 @@ impl Sector {
 
         // The subheader is at the beginning of the payload
         if !self.ready.contains(DataReady::PAYLOAD) {
-            // Should we really support this case? Which image format
-            // could leave us in this state?
-            panic!("Missing payload for a track!");
+            // Should we really support this case? Which image format could leave us in this state?
+            unimplemented!("Missing payload for a track!");
         }
 
         Ok(XaSubHeader::new(*array_ref![self.data, 16, 8]))
     }
 
-    /// Retrieve a CD-ROM XA Mode 2 payload. Returns
-    /// `CdError::BadFormat` if this is not a Mode 2 sector.
+    /// Retrieve a CD-ROM XA Mode 2 payload. Returns `CdError::BadFormat` if this is not a Mode 2
+    /// sector.
     ///
-    /// For Form 1 tracks the slice returned will be either be 2048 or
-    /// 2324 bytes long depending on whether the sector is form 1 or
-    /// form 2 respectively.
+    /// For Form 1 tracks the slice returned will be either be 2048 or 2324 bytes long depending on
+    /// whether the sector is form 1 or form 2 respectively.
     pub fn mode2_xa_payload(&self) -> CdResult<&[u8]> {
         let subheader = self.mode2_xa_subheader()?;
 
@@ -114,31 +180,40 @@ impl Sector {
 bitflags! {
     /// Bitflag holding the data ready to be read from the sector.
     struct DataReady: u8 {
-        /// 16byte sector header for CD-ROM and CDi data
-        /// tracks. Contains the sync pattern, MSF and mode of the
-        /// sector. Some image formats don't store this information
-        /// since it can be reconstructed easily.
+        /// 16byte sector header for CD-ROM and CDi data tracks. Contains the sync pattern, MSF and
+        /// mode of the sector. Some image formats don't store this information since it can be
+        /// reconstructed easily.
         const HEADER    = 0b0000_0001;
-        /// Sector data without the header and error
-        /// detection/correction bits. The actual portion of the
-        /// sector this represents varies depends on the sector
-        /// format. For CD-ROM XA and CD-i Mode 2 the subheader is
-        /// considered to be part of the payload.
+        /// Sector data without the header and error detection/correction bits. The actual portion
+        /// of the sector this represents varies depends on the sector format. For CD-ROM XA and
+        /// CD-i Mode 2 the subheader is considered to be part of the payload.
         ///
-        /// Maybe this flag is useless, could there be any situation
-        /// where this won't be set? Arguably we won't be able to get
-        /// the payload in certain image formats (pregap in CUEs for
-        /// instance) but then we can just fill them with zeroes?
+        /// Maybe this flag is useless, could there be any situation where this won't be set?
+        /// Arguably we won't be able to get the payload in certain image formats (pregap in CUEs
+        /// for instance) but then we can just fill them with zeroes?
         const PAYLOAD   = 0b0000_0010;
-        /// Error detection and correction bits (if applicable, always
-        /// set for audio tracks).
+        /// Error detection and correction bits (if applicable, always set for audio tracks).
         const ECM       = 0b0000_0100;
-        /// The entire 2352 bytes of sector data (everything except
-        /// for the subchannel data)
+        /// The entire 2352 bytes of sector data (everything except for the subchannel data)
         const DATA_2352 = Self::HEADER.bits | Self::PAYLOAD.bits | Self::ECM.bits;
-        /// Set when the metadata is valid
-        const METADATA  = 0b0000_1000;
     }
+}
+
+/// Decoded CD-ROM sector header
+pub struct CdRomHeader {
+    /// Sector MSF (normally should match the one in the metadata, although if the CD is improperly
+    /// formatted it could be different)
+    pub msf: Msf,
+    /// CD-ROM mode for this sector
+    pub mode: CdRomMode,
+}
+
+/// Mode for a CD-ROM sector
+pub enum CdRomMode {
+    /// Mode1 ("Regular" CD-ROM)
+    Mode1 = 1,
+    /// Mode2 (Used for various other sub-formats, such as CD-ROM XA)
+    Mode2 = 2,
 }
 
 /// Mode 2 XA sub-header (from the CDi "green book"):
@@ -152,8 +227,7 @@ bitflags! {
 ///   byte 6: Submode
 ///   byte 7: Coding information
 ///
-/// The subheader starts at byte 16 of CD-ROM XA sectors, just after
-/// the CD-ROM header.
+/// The subheader starts at byte 16 of CD-ROM XA sectors, just after the CD-ROM header.
 pub struct XaSubHeader {
     subheader: [u8; 8],
 }
@@ -175,8 +249,7 @@ impl XaSubHeader {
     }
 }
 
-/// CD-ROM XA Mode 2 sectors have two possible forms (advertised in
-/// the subheader)
+/// CD-ROM XA Mode 2 sectors have two possible forms (advertised in the subheader)
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum XaForm {
     /// Mode 2 Form 1: 2048 bytes of data, 4 bytes of error detection
@@ -192,24 +265,22 @@ pub enum XaForm {
     Form2,
 }
 
-/// Interface used to build a new sector "in place" to avoid copying
-/// sector data around.
+/// Interface used to build a new sector "in place" to avoid copying sector data around.
 pub struct SectorBuilder<'a> {
     sector: &'a mut Sector,
 }
 
 impl<'a> SectorBuilder<'a> {
-    /// Create a new SectorBuilder using `sector` for storage. The
-    /// contents of `sector` will be reset.
+    /// Create a new SectorBuilder using `sector` for storage. The contents of `sector` will be
+    /// reset.
     pub fn new(sector: &mut Sector) -> SectorBuilder {
         sector.ready = DataReady::empty();
 
         SectorBuilder { sector }
     }
 
-    /// Load up the full 2352 bytes of sector data. The `loader`
-    /// function will be called with a mutable reference to the sector
-    /// data. If the `loader` callback returns an error the sector
+    /// Load up the full 2352 bytes of sector data. The `loader` function will be called with a
+    /// mutable reference to the sector data. If the `loader` callback returns an error the sector
     /// data won't be tagged as valid.
     pub fn set_data_2352<F, E>(&mut self, loader: F) -> Result<(), E>
     where
@@ -225,6 +296,5 @@ impl<'a> SectorBuilder<'a> {
     /// Set the metadata for the sector
     pub fn set_metadata(&mut self, metadata: Metadata) {
         self.sector.metadata = metadata;
-        self.sector.ready.insert(DataReady::METADATA);
     }
 }
