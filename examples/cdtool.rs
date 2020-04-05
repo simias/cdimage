@@ -25,7 +25,10 @@ fn main() {
         Ok(mut c) => {
             let mut sector = c.read_sector(msf).unwrap();
 
-            println!("form: {:?}", sector.mode2_xa_subheader().unwrap().form());
+            println!(
+                "form: {:?}",
+                sector.mode2_xa_subheader().unwrap().submode().form()
+            );
             println!("format: {:?}", sector.metadata().format);
 
             let bytes = sector.data_2352().unwrap();

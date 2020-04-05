@@ -157,7 +157,7 @@ impl Sector {
             unimplemented!("Missing payload for a track!");
         }
 
-        Ok(XaSubHeader::new(*array_ref![self.data, 16, 8]))
+        Ok(XaSubHeader(*array_ref![self.data, 16, 8]))
     }
 
     /// Retrieve a CD-ROM XA Mode 2 payload. Returns `CdError::BadFormat` if this is not a Mode 2
@@ -168,7 +168,7 @@ impl Sector {
     pub fn mode2_xa_payload(&self) -> CdResult<&[u8]> {
         let subheader = self.mode2_xa_subheader()?;
 
-        let payload = match subheader.form() {
+        let payload = match subheader.submode().form() {
             XaForm::Form1 => &self.data[24..2072],
             XaForm::Form2 => &self.data[24..2348],
         };
@@ -220,51 +220,188 @@ pub enum CdRomMode {
 
 /// Mode 2 XA sub-header (from the CDi "green book"):
 ///
-///   byte 0: File number
-///   byte 1: Channel number
+///   byte 0: File Number
+///   byte 1: Channel Number
 ///   byte 2: Submode
-///   byte 3: Coding information
-///   byte 4: File number
-///   byte 5: Channel number
+///   byte 3: Coding Information
+///   byte 4: File Number
+///   byte 5: Channel Number
 ///   byte 6: Submode
-///   byte 7: Coding information
+///   byte 7: Coding Information
 ///
 /// The subheader starts at byte 16 of CD-ROM XA sectors, just after the CD-ROM header.
-pub struct XaSubHeader {
-    subheader: [u8; 8],
-}
+/// The data is copied twice for data integrity but both copies should be identical
+pub struct XaSubHeader([u8; 8]);
 
 impl XaSubHeader {
-    /// Create a new XaSubHeader instance from the 8 bytes of
-    /// `subheader` data.
-    pub fn new(subheader: [u8; 8]) -> XaSubHeader {
-        XaSubHeader { subheader }
+    /// Return the first File Number
+    pub fn file_number(&self) -> u8 {
+        self.0[0]
     }
 
-    /// Return "form" of this sector
-    pub fn form(&self) -> XaForm {
-        if self.subheader[2] & 0x20 != 0 {
-            XaForm::Form1
+    /// Return the first Channel Number
+    pub fn channel_number(&self) -> u8 {
+        self.0[1]
+    }
+
+    /// Return the first Submode
+    pub fn submode(&self) -> XaSubmode {
+        XaSubmode(self.0[2])
+    }
+
+    /// Returns the first coding info based on the sector type
+    pub fn coding_info(&self) -> XaCodingInfo {
+        let submode = self.submode();
+        let coding = self.0[3];
+
+        if submode.video() {
+            XaCodingInfo::Video(XaCodingVideo(coding))
+        } else if submode.audio() {
+            XaCodingInfo::Audio(XaCodingAudio(coding))
         } else {
-            XaForm::Form2
+            XaCodingInfo::Unknown(coding)
         }
+    }
+}
+
+/// Possible interpretations of the XA sub-header Coding Information
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum XaCodingInfo {
+    /// Video coding info
+    Video(XaCodingVideo),
+    /// Audio coding info
+    Audio(XaCodingAudio),
+    /// Unknown or unsupported Coding Information
+    Unknown(u8),
+}
+
+/// Video Coding Information byte from an XA sub-header
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct XaCodingVideo(pub u8);
+
+/// Audio Coding Information byte from an XA sub-header
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct XaCodingAudio(pub u8);
+
+impl XaCodingAudio {
+    /// Returns `true` if the `stereo` bit is set.
+    ///
+    /// Warning: according to the Green Book the field is actualy 2bits (bits 0 and 1) but values
+    /// with bit 1 set are "reserved" so this implementation completely ignores that high bit.
+    pub fn stereo(self) -> bool {
+        self.0 & 1 != 0
+    }
+
+    /// Returns the sampling frequency for this sector.
+    ///
+    /// Warning: according to the Green Book the field is actualy 2bits (bits 2 and 3) but values
+    /// with bit 1 set are "reserved" so this implementation completely ignores that high bit.
+    pub fn sampling_frequency(self) -> XaSamplingFreq {
+        if self.0 & (1 << 2) != 0 {
+            XaSamplingFreq::F18_9
+        } else {
+            XaSamplingFreq::F37_8
+        }
+    }
+
+    /// Returns the number of bits per sample
+    ///
+    /// Warning: according to the Green Book the field is actualy 2bits (bits 4 and 5) but values
+    /// with bit 1 set are "reserved" so this implementation completely ignores that high bit.
+    pub fn bits_per_sample(self) -> XaBitsPerSample {
+        if self.0 & (1 << 4) != 0 {
+            XaBitsPerSample::S8Bits
+        } else {
+            XaBitsPerSample::S4Bits
+        }
+    }
+
+    /// Returns true if emphasis is on for this sector
+    pub fn emphasis(self) -> bool {
+        self.0 & (1 << 6) != 0
+    }
+}
+
+/// Possible values for the sampling frequency of an audio XA sector
+pub enum XaSamplingFreq {
+    /// 37.8 kHz
+    F37_8 = 0,
+    /// 18.9 kHz
+    F18_9 = 1,
+}
+
+/// Possible values for the number of bits per sample of an audio XA sector
+pub enum XaBitsPerSample {
+    /// 4 bits per sample
+    S4Bits = 4,
+    /// 8 bits per sample
+    S8Bits = 8,
+}
+
+/// The Submode byte in a Mode 2 XA sub-header (byte 6)
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct XaSubmode(pub u8);
+
+impl XaSubmode {
+    /// True if the End Of Record (EOR) bit is set.
+    pub fn end_of_record(self) -> bool {
+        self.0 & 1 != 0
+    }
+
+    /// True if the Video (V) bit is set
+    pub fn video(self) -> bool {
+        self.0 & (1 << 1) != 0
+    }
+
+    /// True if the Audio (A) bit is set.
+    pub fn audio(self) -> bool {
+        self.0 & (1 << 2) != 0
+    }
+
+    /// True if the Data (D) bit is set.
+    pub fn data(self) -> bool {
+        self.0 & (1 << 3) != 0
+    }
+
+    /// True if the Trigger (T) bit is set.
+    pub fn trigger(self) -> bool {
+        self.0 & (1 << 4) != 0
+    }
+
+    /// Return the sector form
+    pub fn form(self) -> XaForm {
+        let form2 = self.0 & (1 << 5) != 0;
+
+        if form2 {
+            XaForm::Form2
+        } else {
+            XaForm::Form1
+        }
+    }
+
+    /// True if the Real-Time Sector (RT) bit is set
+    pub fn real_time(self) -> bool {
+        self.0 & (1 << 6) != 0
+    }
+
+    /// True if the End Of File (EOF) bit is set
+    pub fn end_of_file(self) -> bool {
+        self.0 & (1 << 7) != 0
     }
 }
 
 /// CD-ROM XA Mode 2 sectors have two possible forms (advertised in the subheader)
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum XaForm {
-    /// Mode 2 Form 1: 2048 bytes of data, 4 bytes of error detection
-    /// and 276 bytes of error correction
-    Form1,
-    /// Mode 2 Form 2: 2324 bytes of data, 4 bytes of "quality
-    /// control".
+    /// Mode 2 Form 1: 2048 bytes of data, 4 bytes of error detection and 276 bytes of error
+    /// correction
+    Form1 = 0,
+    /// Mode 2 Form 2: 2324 bytes of data, 4 bytes of "quality control".
     ///
-    /// The CDi spec says that those bytes are reserved and ignored by
-    /// the system and *recommends* to use the same algorithm as for
-    /// the Form 1 error detection code. It's also possible to leave
-    /// it to zero if unused...
-    Form2,
+    /// The CDi spec says that those bytes are reserved and ignored by the system and *recommends*
+    /// to use the same algorithm as for the Form 1 error detection code. It's also possible to
+    /// leave it to zero if unused...
+    Form2 = 1,
 }
 
 /// Interface used to build a new sector "in place" to avoid copying sector data around.
