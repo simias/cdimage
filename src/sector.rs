@@ -82,7 +82,7 @@ impl Sector {
             return Err(CdError::BadSyncPattern);
         }
 
-        if header.iter().take(11).skip(1).any(|&b| b == 0xff) {
+        if header.iter().take(11).skip(1).any(|&b| b != 0xff) {
             return Err(CdError::BadSyncPattern);
         }
 

@@ -152,3 +152,10 @@ pub enum CdError {
 
 /// Convenience type alias for a `Result<R, CdError>`
 pub type CdResult<R> = std::result::Result<R, CdError>;
+
+#[test]
+fn cderror_display() {
+    // Make sure that CdError implements Display. This should be true if we set an
+    // `#[error("...")]` for every variant
+    println!("{}", CdError::BadTrack);
+}
