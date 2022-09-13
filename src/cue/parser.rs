@@ -78,7 +78,11 @@ impl CueParser {
     }
 
     fn error(&self, msg: String) -> CdError {
-        CdError::ParseError(self.cue_path.clone(), self.line, msg)
+        CdError::ParseError {
+            path: self.cue_path.clone(),
+            line: self.line,
+            desc: msg,
+        }
     }
 
     fn error_str(&self, msg: &str) -> CdError {

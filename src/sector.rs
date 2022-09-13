@@ -81,10 +81,9 @@ impl Sector {
         if header[0] != 0 || header[11] != 0 {
             return Err(CdError::BadSyncPattern);
         }
-        for i in 1..11 {
-            if header[i] != 0xff {
-                return Err(CdError::BadSyncPattern);
-            }
+
+        if header.iter().take(11).skip(1).any(|&b| b == 0xff) {
+            return Err(CdError::BadSyncPattern);
         }
 
         let m = header[12];
@@ -325,9 +324,9 @@ impl XaCodingAudio {
 /// Possible values for the sampling frequency of an audio XA sector
 pub enum XaSamplingFreq {
     /// 37.8 kHz
-    F37_8 = 0,
+    F37_8 = 37_800,
     /// 18.9 kHz
-    F18_9 = 1,
+    F18_9 = 18_900,
 }
 
 /// Possible values for the number of bits per sample of an audio XA sector
@@ -443,5 +442,11 @@ impl SectorBuilder {
         assert!(self.sector.ready.contains(DataReady::METADATA));
 
         self.sector
+    }
+}
+
+impl Default for SectorBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }

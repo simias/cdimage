@@ -5,17 +5,18 @@
 #![warn(missing_docs)]
 
 #[macro_use]
-extern crate bitflags;
-#[macro_use]
 extern crate arrayref;
+#[macro_use]
+extern crate bitflags;
+extern crate thiserror;
 
 use bcd::Bcd;
 use msf::Msf;
 use sector::Sector;
 use std::clone::Clone;
-use std::fmt;
 use std::io;
 use std::path::PathBuf;
+use thiserror::Error;
 
 pub mod bcd;
 pub mod crc;
@@ -33,7 +34,7 @@ pub trait Image {
     fn image_format(&self) -> String;
 
     /// Read a single sector at the given MSF
-    fn read_sector(&mut self, Msf) -> CdResult<Sector>;
+    fn read_sector(&mut self, msf: Msf) -> CdResult<Sector>;
 
     /// Get the table of contents
     fn toc(&self) -> &Toc;
@@ -120,59 +121,34 @@ pub enum TrackFormat {
 }
 
 /// Error type for disc operations.
-#[derive(Debug)]
+#[allow(missing_docs)]
+#[derive(Error, Debug)]
 pub enum CdError {
-    /// Generic I/O error
-    IoError(io::Error),
-    /// Format missmatch. For instance when one attempts to retrieve CD-ROM payloads on an audio
-    /// track.
+    #[error("Generic I/O error")]
+    IoError(#[from] io::Error),
+    #[error("Format missmatch. For instance when one attempts to retrieve CD-ROM payloads on an audio track.")]
     BadFormat,
-    /// Attempted to access a sector past the end of the CD
+    #[error("Attempted to access a sector past the end of the CD")]
     LeadOut,
-    /// Unexpected or corrupted image format. Contains the path of the file and the line where the
-    /// error occured and a string describing the problem in a human-readble way.
-    ParseError(PathBuf, u32, String),
-    /// Disc format error (two tracks with the same number, missing track, absurd index etc...).
-    /// Contains the path of the file and a `String` describing the problem.
-    BadImage(PathBuf, String),
-    /// Attempted to access an invalid track number
+    #[error("Unexpected or corrupted image format `{path}`|{line}: {desc}")]
+    ParseError {
+        path: PathBuf,
+        line: u32,
+        desc: String,
+    },
+    #[error("Disc format error in file `{path}`: {desc}")]
+    BadImage { path: PathBuf, desc: String },
+    #[error("Attempted to access an invalid track number")]
     BadTrack,
-    /// Attempted to access a track past its end
+    #[error("Attempted to access a track past its end")]
     EndOfTrack,
-    /// The sync pattern at the start of a CD-ROM sector (0x00, 0xff * 12, 0x00) was invalid
+    #[error(
+        "The sync pattern at the start of a CD-ROM sector (0x00, 0xff * 10, 0x00) was invalid"
+    )]
     BadSyncPattern,
-    /// Attempted to parse invalid BCD data
+    #[error("Attempted to parse invalid BCD data")]
     BadBcd,
-}
-
-/// We want CdError to be clone-able in order to allow caching easily.
-impl Clone for CdError {
-    fn clone(&self) -> Self {
-        match self {
-            // IoError can't be cloned, attempt a best-effort workaround
-            CdError::IoError(ref e) => {
-                let new = match e.raw_os_error() {
-                    Some(c) => io::Error::from_raw_os_error(c),
-                    None => io::Error::new(e.kind(), "Unknown"),
-                };
-
-                CdError::IoError(new)
-            }
-            e => e.clone(),
-        }
-    }
 }
 
 /// Convenience type alias for a `Result<R, CdError>`
 pub type CdResult<R> = std::result::Result<R, CdError>;
-
-impl fmt::Display for CdError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &CdError::ParseError(ref path, line, ref err) => {
-                write!(f, "{}:{}: {}", path.display(), line, err)
-            }
-            e => write!(f, "{:?}", e),
-        }
-    }
-}

@@ -141,7 +141,10 @@ impl<T> IndexCache<T> {
         lead_out: Msf,
     ) -> CdResult<IndexCache<T>> {
         if indices.is_empty() {
-            return Err(CdError::BadImage(file, "Empty disc".to_string()));
+            return Err(CdError::BadImage {
+                path: file,
+                desc: "Empty disc".to_string(),
+            });
         }
 
         // Make sure the list is sorted
@@ -153,7 +156,10 @@ impl<T> IndexCache<T> {
             if index0.sector_index != 0 {
                 let error = format!("Track 01's pregap starts at {}", index0.msf());
 
-                return Err(CdError::BadImage(file, error));
+                return Err(CdError::BadImage {
+                    path: file,
+                    desc: error,
+                });
             }
         }
 
@@ -263,7 +269,11 @@ impl<T> IndexCache<T> {
 
     /// Build a table of contents with the current cache's contents
     pub fn toc(&self) -> Toc {
-        let track_count = self.indices.last().map(|i| i.track).unwrap_or(Bcd::zero());
+        let track_count = self
+            .indices
+            .last()
+            .map(|i| i.track)
+            .unwrap_or_else(Bcd::zero);
         let mut tracks = Vec::with_capacity(track_count.binary() as usize);
         for b in 1..=99 {
             let track_no = Bcd::from_binary(b).unwrap();

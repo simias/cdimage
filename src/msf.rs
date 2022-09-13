@@ -5,7 +5,6 @@
 //! There are 75 frames/sectors in a second, 60 seconds in a
 //! minute. All three components are stored as BCD.
 
-use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::{cmp, fmt, ops};
 
@@ -14,7 +13,7 @@ use super::bcd::Bcd;
 /// CD "minute:second:frame" timestamp, given as triplet of *BCD*
 /// encoded bytes. In this context "frame" is synonymous with
 /// "sector".
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Msf(Bcd, Bcd, Bcd);
 
 impl Msf {
@@ -132,16 +131,6 @@ impl Msf {
         let Msf(m, s, f) = self;
 
         ((m.bcd() as u32) << 16) | ((s.bcd() as u32) << 8) | (f.bcd() as u32)
-    }
-}
-
-impl Hash for Msf {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        let Msf(m, s, f) = self;
-
-        let v = [m.bcd(), s.bcd(), f.bcd()];
-
-        state.write(&v);
     }
 }
 
