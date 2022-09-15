@@ -16,10 +16,7 @@ fn main() {
     let file = &argv[1];
     let msf = &argv[2];
 
-    let msf = match Msf::from_str(msf) {
-        Ok(m) => m,
-        Err(()) => panic!("Invalid MSF"),
-    };
+    let msf = Msf::from_str(msf).unwrap();
 
     match cdimage::cue::Cue::new(Path::new(file)) {
         Ok(mut c) => {

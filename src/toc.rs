@@ -1,6 +1,155 @@
-use subchannel::Q;
-use {Bcd, LeadInIndex, Toc, Track, TrackFormat};
+use std::fmt;
+use subchannel::{QData, Q};
+use {Bcd, CdError, CdResult, Msf, Sector, SessionFormat, Track, TrackFormat};
 
+/// Table of contents
+#[derive(Clone)]
+pub struct Toc {
+    /// Track list
+    tracks: Vec<Track>,
+}
+
+impl Toc {
+    pub(crate) fn new(tracks: Vec<Track>) -> CdResult<Toc> {
+        if tracks.is_empty() {
+            Err(CdError::EmptyToc)
+        } else {
+            Ok(Toc { tracks })
+        }
+    }
+
+    /// Return the Track description for the given `track_no`. Returns an error if `track_no` is 0
+    /// or greater than the total number of tracks.
+    pub fn track(&self, track_no: Bcd) -> CdResult<&Track> {
+        let t = track_no.binary();
+
+        if t < 1 {
+            return Err(CdError::BadTrack);
+        }
+
+        self.tracks.get((t - 1) as usize).ok_or(CdError::BadTrack)
+    }
+
+    /// Return the full track list
+    pub fn tracks(&self) -> &[Track] {
+        &self.tracks
+    }
+
+    /// Generate a lead-in Toc sector for the given `index`.
+    pub fn build_toc_sector(&self, lead_in_msf: Msf) -> CdResult<Sector> {
+        let index = (Msf::MAX - lead_in_msf).sector_index();
+
+        // Number of entries in the raw ToC: one per track + first track + last track + lead-in
+        let ntracks = self.tracks.len() as u32;
+        let nentries = ntracks + 3;
+
+        // We divide by 3 because each entry is usually repeated 3 times in a row
+        let entry_off = nentries - ((index / 3) % nentries) - 1;
+
+        let (q, fmt) = match entry_off {
+            0 => {
+                let t = &self.tracks[0];
+
+                let format = t.format;
+
+                let qdata = QData::Mode1TocFirstTrack {
+                    first_track: t.track,
+                    session_format: self.session_format(),
+                    lead_in_msf,
+                };
+
+                (Q::from_qdata(qdata, format), format)
+            }
+            1 => {
+                let t = self.tracks.last().unwrap();
+
+                let format = t.format;
+
+                let qdata = QData::Mode1TocLastTrack {
+                    last_track: t.track,
+                    lead_in_msf,
+                };
+
+                (Q::from_qdata(qdata, format), format)
+            }
+            2 => {
+                // I'm not sure what the format of these sectors should be but in practice it seems
+                // to be the same type as the last sector.
+                let t = self.tracks.last().unwrap();
+                let format = t.format;
+
+                let qdata = QData::Mode1TocLeadOut {
+                    lead_out_start: self.lead_out_start(),
+                    lead_in_msf,
+                };
+
+                (Q::from_qdata(qdata, format), format)
+            }
+            n => {
+                let t = &self.tracks[(n - 3) as usize];
+                let format = t.format;
+
+                let qdata = QData::Mode1Toc {
+                    track: t.track,
+                    index1_msf: t.start,
+                    lead_in_msf,
+                };
+
+                (Q::from_qdata(qdata, format), format)
+            }
+        };
+
+        Sector::empty(q, fmt)
+    }
+
+    /// Returns the MSF of the first sector in the lead-out
+    pub fn lead_out_start(&self) -> Msf {
+        let t = self.tracks.last().unwrap();
+
+        t.start + t.length
+    }
+
+    /// Return the session format for this ToC based on the format of its tracks
+    pub fn session_format(&self) -> SessionFormat {
+        for t in self.tracks.iter() {
+            match t.format {
+                TrackFormat::Audio => (),
+                // XXX Not sure about this one
+                TrackFormat::CdG => (),
+                TrackFormat::Mode1 => (),
+                TrackFormat::Mode2Xa => return SessionFormat::CdXa,
+                TrackFormat::Mode2CdI => return SessionFormat::Cdi,
+            }
+        }
+
+        // No "special" track found, it's probably a conventional CD
+        SessionFormat::CdDaCdRom
+    }
+}
+
+impl fmt::Debug for Toc {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(
+            fmt,
+            "ToC: {} track{}, total length {}",
+            self.tracks.len(),
+            if self.tracks.len() == 1 { "" } else { "s" },
+            self.lead_out_start()
+        )?;
+
+        for t in self.tracks.iter() {
+            writeln!(
+                fmt,
+                " - Track {}: start {} length {} {:?}",
+                t.track, t.start, t.length, t.format,
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 fn ridgeracer_toc() -> Toc {
     let tracks = [
         ("00:02:00", "01:02:51", TrackFormat::Mode2Xa),
@@ -47,6 +196,7 @@ fn ridgeracer_toc() -> Toc {
 
 #[test]
 fn lead_in_generation() {
+    use DiscPosition;
     let toc = ridgeracer_toc();
 
     let expected: &[[u8; 12]] = &[
@@ -292,12 +442,19 @@ fn lead_in_generation() {
         ],
     ];
 
-    for (exp, i) in expected.iter().zip((0..(expected.len())).rev()) {
-        let s = toc.build_toc_sector(LeadInIndex(i as u16)).unwrap();
+    let mut p = DiscPosition::ZERO - Msf::from_sector_index(expected.len() as u32).unwrap();
+
+    for exp in expected.iter() {
+        let msf = match p {
+            DiscPosition::LeadIn(msf) => msf,
+            _ => panic!(),
+        };
+
+        let s = toc.build_toc_sector(msf).unwrap();
 
         let raw = s.q().to_raw();
 
-        print!("{} [", i);
+        print!("{} [", p);
         for &b in raw.iter() {
             print!("0x{:02x},", b);
         }
@@ -308,5 +465,6 @@ fn lead_in_generation() {
         assert_eq!(q, s.q().clone());
 
         assert_eq!(raw, *exp);
+        p = p.next().unwrap();
     }
 }

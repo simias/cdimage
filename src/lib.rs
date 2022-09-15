@@ -8,77 +8,25 @@
 extern crate arrayref;
 extern crate thiserror;
 
-pub use bcd::Bcd;
-pub use msf::Msf;
-pub use sector::Sector;
-use subchannel::{QData, Q};
-
-use std::clone::Clone;
-use std::fmt;
-use std::io;
-use std::path::PathBuf;
-use thiserror::Error;
-
 pub mod bcd;
 pub mod crc;
 pub mod cue;
+mod disc_position;
 pub mod internal;
 pub mod msf;
 pub mod sector;
 pub mod subchannel;
+mod toc;
 
-#[cfg(test)]
-mod tests;
-
-/// An offset within the lead-in (counting away from the pregap of Track 01)
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub struct LeadInIndex(u16);
-
-/// An enum that can describe any position on the disc, be it in the lead-in, program data or
-/// lead-out
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum DiscPosition {
-    /// Position within the lead-in. The integer is the number of sector until we reach the program
-    /// area, so it will count down to zero and then switch to the program area.
-    LeadIn(LeadInIndex),
-    /// Position within the program area, containing an absolute MSF
-    Program(Msf),
-}
-
-impl DiscPosition {
-    /// Return a position that corresponds to a reasonable estimation of the innermost position
-    /// within the lead-in. In practice the real value will depend depending on the disc *and* the
-    /// drive.
-    pub fn innermost() -> DiscPosition {
-        // A few values taken with my PlayStation drive:
-        //
-        // - Ridge Racer revolution: ~4_800 sectors to the program area
-        // - MGS1 disc 1: ~4_900 sectors to the program area
-        // - Tame Impala (CD-DA): ~4_500 sectors to the program area
-        //
-        // Judging by the lead-in MSF
-        DiscPosition::LeadIn(LeadInIndex(4_500))
-    }
-
-    /// Returns true if this position is within the lead-in area
-    pub fn in_lead_in(self) -> bool {
-        matches!(self, DiscPosition::LeadIn(_))
-    }
-
-    /// Returns the position of the sector after `self` or `None` if we've reached 99:59:74.
-    pub fn next(self) -> Option<DiscPosition> {
-        let n = match self {
-            DiscPosition::LeadIn(LeadInIndex(0)) => DiscPosition::Program(Msf::ZERO),
-            DiscPosition::LeadIn(LeadInIndex(n)) => DiscPosition::LeadIn(LeadInIndex(n - 1)),
-            DiscPosition::Program(msf) => match msf.next() {
-                Some(msf) => DiscPosition::Program(msf),
-                None => return None,
-            },
-        };
-
-        Some(n)
-    }
-}
+pub use bcd::Bcd;
+pub use disc_position::DiscPosition;
+pub use msf::Msf;
+pub use sector::Sector;
+use std::clone::Clone;
+use std::io;
+use std::path::PathBuf;
+use thiserror::Error;
+pub use toc::Toc;
 
 /// Abstract read-only interface to an image format
 pub trait Image {
@@ -116,171 +64,6 @@ impl Track {
         } else {
             Err(CdError::EndOfTrack)
         }
-    }
-}
-
-/// Table of contents
-#[derive(Clone)]
-pub struct Toc {
-    /// Track list
-    tracks: Vec<Track>,
-}
-
-impl Toc {
-    fn new(tracks: Vec<Track>) -> CdResult<Toc> {
-        if tracks.is_empty() {
-            Err(CdError::EmptyToc)
-        } else {
-            Ok(Toc { tracks })
-        }
-    }
-
-    /// Return the Track description for the given `track_no`. Returns an error if `track_no` is 0
-    /// or greater than the total number of tracks.
-    pub fn track(&self, track_no: Bcd) -> CdResult<&Track> {
-        let t = track_no.binary();
-
-        if t < 1 {
-            return Err(CdError::BadTrack);
-        }
-
-        self.tracks.get((t - 1) as usize).ok_or(CdError::BadTrack)
-    }
-
-    /// Return the full track list
-    pub fn tracks(&self) -> &[Track] {
-        &self.tracks
-    }
-
-    /// Generate a lead-in Toc sector for the given `index`.
-    pub fn build_toc_sector(&self, LeadInIndex(index): LeadInIndex) -> CdResult<Sector> {
-        let index = u32::from(index);
-
-        // The absolute MSF for the lead-in is arbitrary but must be incrementing.
-        //
-        // Some discs appear to have small values (maybe starting at 00:00:00 at the very start of
-        // the lead-in? The PlayStation generally a few minutes in, but it could be a mechanical
-        // constraint).
-        //
-        // Other discs appear to do the opposite: they make the last sector of the lead-in 99:59:74
-        // and then count back from there into the lead-in. I arbitrary selected this 2nd approach
-        // here
-        let lead_in_msf = {
-            let end_idx = Msf::MAX.sector_index();
-
-            // By design it should be impossible for the operations below to fail since the lead-in
-            // index is an u16 and Msf::MAX is well beyond that range.
-            assert!(end_idx >= index, "Invalid lead-in index");
-            Msf::from_sector_index(end_idx - index).expect("Invalid lead-in MSF")
-        };
-
-        // Number of entries in the raw ToC: one per track + first track + last track + lead-in
-        let ntracks = self.tracks.len() as u32;
-        let nentries = ntracks + 3;
-
-        // We divide by 3 because each entry is usually repeated 3 times in a row
-        let entry_off = nentries - ((index / 3) % nentries) - 1;
-
-        let (q, fmt) = match entry_off {
-            0 => {
-                let t = &self.tracks[0];
-
-                let format = t.format;
-
-                let qdata = QData::Mode1TocFirstTrack {
-                    first_track: t.track,
-                    session_format: self.session_format(),
-                    lead_in_msf,
-                };
-
-                (Q::from_qdata(qdata, format), format)
-            }
-            1 => {
-                let t = self.tracks.last().unwrap();
-
-                let format = t.format;
-
-                let qdata = QData::Mode1TocLastTrack {
-                    last_track: t.track,
-                    lead_in_msf,
-                };
-
-                (Q::from_qdata(qdata, format), format)
-            }
-            2 => {
-                // I'm not sure what the format of these sectors should be but in practice it seems
-                // to be the same type as the last sector.
-                let t = self.tracks.last().unwrap();
-                let format = t.format;
-
-                let qdata = QData::Mode1TocLeadOut {
-                    lead_out_start: self.lead_out_start(),
-                    lead_in_msf,
-                };
-
-                (Q::from_qdata(qdata, format), format)
-            }
-            n => {
-                let t = &self.tracks[(n - 3) as usize];
-                let format = t.format;
-
-                let qdata = QData::Mode1Toc {
-                    track: t.track,
-                    index1_msf: t.start,
-                    lead_in_msf,
-                };
-
-                (Q::from_qdata(qdata, format), format)
-            }
-        };
-
-        Sector::empty(q, fmt)
-    }
-
-    /// Returns the MSF of the first sector in the lead-out
-    pub fn lead_out_start(&self) -> Msf {
-        let t = self.tracks.last().unwrap();
-
-        t.start + t.length
-    }
-
-    /// Return the session format for this ToC based on the format of its tracks
-    pub fn session_format(&self) -> SessionFormat {
-        for t in self.tracks.iter() {
-            match t.format {
-                TrackFormat::Audio => (),
-                // XXX Not sure about this one
-                TrackFormat::CdG => (),
-                TrackFormat::Mode1 => (),
-                TrackFormat::Mode2Xa => return SessionFormat::CdXa,
-                TrackFormat::Mode2CdI => return SessionFormat::Cdi,
-            }
-        }
-
-        // No "special" track found, it's probably a conventional CD
-        SessionFormat::CdDaCdRom
-    }
-}
-
-impl fmt::Debug for Toc {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(
-            fmt,
-            "ToC: {} track{}, total length {}",
-            self.tracks.len(),
-            if self.tracks.len() == 1 { "" } else { "s" },
-            self.lead_out_start()
-        )?;
-
-        for t in self.tracks.iter() {
-            writeln!(
-                fmt,
-                " - Track {}: start {} length {} {:?}",
-                t.track, t.start, t.length, t.format,
-            )?;
-        }
-
-        Ok(())
     }
 }
 
@@ -371,6 +154,10 @@ pub enum CdError {
     Unsupported,
     #[error("Empty table of contents")]
     EmptyToc,
+    #[error("Invalid or unexpected MSF format")]
+    InvalidMsf,
+    #[error("Invalid or unexpected disc position format")]
+    InvalidDiscPosition,
 }
 
 /// Convenience type alias for a `Result<R, CdError>`

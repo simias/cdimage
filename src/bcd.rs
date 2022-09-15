@@ -6,6 +6,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use CdError;
+
 /// A single packed BCD value in the range 0-99 (2 digits, 4bits per digit).
 #[derive(Copy, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Bcd(u8);
@@ -174,15 +176,15 @@ impl Bcd {
 }
 
 impl FromStr for Bcd {
-    type Err = ();
+    type Err = CdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let b = match u8::from_str(s) {
             Ok(b) => b,
-            Err(_) => return Err(()),
+            Err(_) => return Err(CdError::BadBcd),
         };
 
-        Bcd::from_binary(b).ok_or(())
+        Bcd::from_binary(b).ok_or(CdError::BadBcd)
     }
 }
 
@@ -215,20 +217,20 @@ fn conversions() {
 
 #[test]
 fn from_str() {
-    assert!(Bcd::from_str("00") == Ok(Bcd(0)));
-    assert!(Bcd::from_str("0") == Ok(Bcd(0)));
-    assert!(Bcd::from_str("4") == Ok(Bcd(4)));
-    assert!(Bcd::from_str("04") == Ok(Bcd(4)));
-    assert!(Bcd::from_str("99") == Ok(Bcd(0x99)));
-    assert!(Bcd::from_str("099") == Ok(Bcd(0x99)));
-    assert!(Bcd::from_str("42") == Ok(Bcd(0x42)));
+    assert!(Bcd::from_str("00").unwrap() == Bcd(0));
+    assert!(Bcd::from_str("0").unwrap() == Bcd(0));
+    assert!(Bcd::from_str("4").unwrap() == Bcd(4));
+    assert!(Bcd::from_str("04").unwrap() == Bcd(4));
+    assert!(Bcd::from_str("99").unwrap() == Bcd(0x99));
+    assert!(Bcd::from_str("099").unwrap() == Bcd(0x99));
+    assert!(Bcd::from_str("42").unwrap() == Bcd(0x42));
 
-    assert!(Bcd::from_str("0x00") == Err(()));
-    assert!(Bcd::from_str("0xab") == Err(()));
-    assert!(Bcd::from_str("ab") == Err(()));
-    assert!(Bcd::from_str("100") == Err(()));
-    assert!(Bcd::from_str("0100") == Err(()));
-    assert!(Bcd::from_str("-2") == Err(()));
+    assert!(Bcd::from_str("0x00").is_err());
+    assert!(Bcd::from_str("0xab").is_err());
+    assert!(Bcd::from_str("ab").is_err());
+    assert!(Bcd::from_str("100").is_err());
+    assert!(Bcd::from_str("0100").is_err());
+    assert!(Bcd::from_str("-2").is_err());
 }
 
 #[test]

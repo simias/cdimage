@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::{cmp, fmt, ops};
 
 use bcd::Bcd;
-use DiscPosition;
+use {CdError, DiscPosition};
 
 /// CD "minute:second:frame" timestamp, given as triplet of *BCD*
 /// encoded bytes. In this context "frame" is synonymous with
@@ -21,6 +21,9 @@ impl Msf {
     /// MSF for 00:00:00
     pub const ZERO: Msf = Msf(Bcd::ZERO, Bcd::ZERO, Bcd::ZERO);
 
+    /// MSF for 99:00:00
+    pub const T_99_00_00: Msf = Msf(Bcd::MAX, Bcd::ZERO, Bcd::ZERO);
+
     /// MSF for 99:54:73
     pub const MAX: Msf = Msf(Bcd::TABLE[99], Bcd::TABLE[59], Bcd::TABLE[74]);
 
@@ -29,7 +32,7 @@ impl Msf {
     pub const fn new(m: Bcd, s: Bcd, f: Bcd) -> Option<Msf> {
         // Make sure the frame and seconds makes sense (there are only
         // 75 frames per second and obviously 60 seconds per minute)
-        if s.bcd() < 0x60 || f.bcd() < 0x75 {
+        if s.bcd() < 0x60 && f.bcd() < 0x75 {
             Some(Msf(m, s, f))
         } else {
             None
@@ -128,7 +131,17 @@ impl Msf {
         let a = self.sector_index();
         let b = other.sector_index();
 
+        // We don't have to use checked_add because the maximum sector index for a valid MSF is
+        // 449_999, so we can't have an overflow with `u32`s.
         Msf::from_sector_index(a + b)
+    }
+
+    /// Computes `self - rhs`, returning `None` if overflow occurred
+    pub fn checked_sub(self, rhs: Msf) -> Option<Msf> {
+        let a = self.sector_index();
+        let b = rhs.sector_index();
+
+        a.checked_sub(b).and_then(Msf::from_sector_index)
     }
 
     /// Pack the Msf in a single BCD u32, makes it easier to do
@@ -177,31 +190,8 @@ impl ops::Sub for Msf {
     type Output = Msf;
 
     fn sub(self, rhs: Msf) -> Msf {
-        let a = self.sector_index();
-        let b = rhs.sector_index();
-
-        if b > a {
-            panic!("MSF substraction overflow: {} - {}", self, rhs);
-        }
-
-        Msf::from_sector_index(a - b).unwrap()
-    }
-}
-
-impl ops::Add for Msf {
-    type Output = Msf;
-
-    fn add(self, rhs: Msf) -> Msf {
-        match self.checked_add(rhs) {
-            Some(m) => m,
-            None => panic!("MSF addition overflow: {} + {}", self, rhs),
-        }
-    }
-}
-
-impl ops::AddAssign for Msf {
-    fn add_assign(&mut self, other: Self) {
-        *self = *self + other;
+        self.checked_sub(rhs)
+            .unwrap_or_else(|| panic!("MSF subtraction overflow {} - {}", self, rhs))
     }
 }
 
@@ -211,8 +201,23 @@ impl ops::SubAssign for Msf {
     }
 }
 
+impl ops::Add for Msf {
+    type Output = Msf;
+
+    fn add(self, rhs: Msf) -> Msf {
+        self.checked_add(rhs)
+            .unwrap_or_else(|| panic!("MSF addition overflow: {} + {}", self, rhs))
+    }
+}
+
+impl ops::AddAssign for Msf {
+    fn add_assign(&mut self, other: Self) {
+        *self = *self + other;
+    }
+}
+
 impl FromStr for Msf {
-    type Err = ();
+    type Err = CdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut msf = [Bcd::ZERO; 3];
@@ -220,7 +225,7 @@ impl FromStr for Msf {
 
         for (i, s) in s.split(':').enumerate() {
             if i >= 3 {
-                return Err(());
+                return Err(CdError::InvalidMsf);
             }
 
             count += 1;
@@ -228,10 +233,10 @@ impl FromStr for Msf {
         }
 
         if count != 3 {
-            return Err(());
+            return Err(CdError::InvalidMsf);
         }
 
-        Msf::new(msf[0], msf[1], msf[2]).ok_or(())
+        Msf::new(msf[0], msf[1], msf[2]).ok_or(CdError::InvalidMsf)
     }
 }
 
@@ -282,16 +287,18 @@ mod test {
 
     #[test]
     fn from_str() {
-        assert!(Msf::from_str("00:00:00") == Ok(msf(0x00, 0x00, 0x00)));
-        assert!(Msf::from_str("01:02:03") == Ok(msf(0x01, 0x02, 0x03)));
-        assert!(Msf::from_str("11:12:13") == Ok(msf(0x11, 0x12, 0x13)));
-        assert!(Msf::from_str("99:59:74") == Ok(msf(0x99, 0x59, 0x74)));
+        assert!(Msf::from_str("00:00:00").unwrap() == msf(0x00, 0x00, 0x00));
+        assert!(Msf::from_str("01:02:03").unwrap() == msf(0x01, 0x02, 0x03));
+        assert!(Msf::from_str("11:12:13").unwrap() == msf(0x11, 0x12, 0x13));
+        assert!(Msf::from_str("99:59:74").unwrap() == msf(0x99, 0x59, 0x74));
 
-        assert!(Msf::from_str("00") == Err(()));
-        assert!(Msf::from_str("00:00") == Err(()));
-        assert!(Msf::from_str("00:00:00:00") == Err(()));
+        assert!(Msf::from_str("00").is_err());
+        assert!(Msf::from_str("00:00").is_err());
+        assert!(Msf::from_str("00:00:00:00").is_err());
 
-        assert!(Msf::from_str("99:99:99") == Err(()));
+        assert!(Msf::from_str("99:99:99").is_err());
+        assert!(Msf::from_str("00:60:00").is_err());
+        assert!(Msf::from_str("00:00:75").is_err());
     }
 
     fn msf(m: u8, s: u8, f: u8) -> Msf {
