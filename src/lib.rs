@@ -60,10 +60,20 @@ impl Track {
     /// the `track_msf` is outside of the track.
     pub fn absolute_msf(&self, track_msf: Msf) -> CdResult<Msf> {
         if track_msf < self.length {
-            Ok(self.start + track_msf)
+            // If the image format is not bogus that shouldn't happen, since it would mean that a
+            // track has data past the max MSF value
+            self.start.checked_add(track_msf).ok_or(CdError::InvalidMsf)
         } else {
             Err(CdError::EndOfTrack)
         }
+    }
+
+    /// Return the disc position for the position `track_msf` in `track`. Will return an error if
+    /// the `track_msf` is outside of the track.
+    ///
+    /// This is just a thin convenience function that wraps `Track::absolute_msf` in a DiscPosition
+    pub fn disc_position(&self, track_msf: Msf) -> CdResult<DiscPosition> {
+        self.absolute_msf(track_msf).map(DiscPosition::Program)
     }
 }
 
@@ -126,7 +136,10 @@ impl TrackFormat {
 pub enum CdError {
     #[error("Generic I/O error")]
     IoError(#[from] io::Error),
-    #[error("Format missmatch. For instance when one attempts to retrieve CD-ROM payloads on an audio track.")]
+    #[error(
+        "Format missmatch. \
+            For instance when one attempts to retrieve CD-ROM payloads on an audio track."
+    )]
     BadFormat,
     #[error("Attempted to access a sector past the end of the CD")]
     LeadOut,
