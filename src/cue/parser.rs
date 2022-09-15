@@ -60,7 +60,7 @@ impl CueParser {
             bin_len: 0,
             consumed_bytes: 0,
             index_type: None,
-            index_msf: Msf::zero(),
+            index_msf: Msf::ZERO,
             track: None,
             indices: Vec::new(),
         };
@@ -68,7 +68,7 @@ impl CueParser {
         parser.parse(&cue_sheet)?;
 
         let indices = IndexCache::new(parser.cue_path, parser.indices, parser.msf)?;
-        let toc = indices.toc();
+        let toc = indices.toc()?;
 
         Ok(Cue {
             indices,
@@ -105,11 +105,12 @@ impl CueParser {
 
             type Callback = fn(&mut CueParser, &[&[u8]]) -> CdResult<()>;
 
-            let handlers: [(&'static [u8], Callback, Option<u32>); 4] = [
+            let handlers: [(&'static [u8], Callback, Option<u32>); 5] = [
                 (b"REM", CueParser::command_rem, None),
-                (b"FILE", CueParser::command_file, Some(3)),
-                (b"TRACK", CueParser::command_track, Some(3)),
-                (b"INDEX", CueParser::command_index, Some(3)),
+                (b"FILE", CueParser::command_file, Some(2)),
+                (b"TRACK", CueParser::command_track, Some(2)),
+                (b"PREGAP", CueParser::command_pregap, Some(1)),
+                (b"INDEX", CueParser::command_index, Some(2)),
             ];
 
             let callback = handlers.iter().find(|&&(name, _, _)| name == command);
@@ -117,7 +118,7 @@ impl CueParser {
             match callback {
                 Some(&(_, c, nparams)) => {
                     if let Some(nparams) = nparams {
-                        if params.len() != nparams as usize {
+                        if params.len() - 1 != nparams as usize {
                             let command = String::from_utf8_lossy(command);
 
                             let error = format!(
@@ -126,7 +127,7 @@ impl CueParser {
                                  {} got {}",
                                 command,
                                 nparams,
-                                params.len()
+                                params.len() - 1
                             );
 
                             return Err(self.error(error));
@@ -203,13 +204,13 @@ impl CueParser {
         self.bin_files.push(bin);
         self.bin_len = size;
         self.consumed_bytes = 0;
-        self.index_msf = Msf::zero();
+        self.index_msf = Msf::ZERO;
         self.index_type = None;
 
         Ok(())
     }
 
-    /// TRACK number datatype
+    /// TRACK bcd track_format
     fn command_track(&mut self, params: &[&[u8]]) -> CdResult<()> {
         if self.bin_files.is_empty() {
             return Err(self.error_str("File-less track"));
@@ -232,6 +233,8 @@ impl CueParser {
             _ => return Err(self.error_str("Unsupported track type")),
         };
 
+        // According to the cdrwin docs the Mode2 formats are specifically for CD-ROM XA and never
+        // CD-ROM Mode 2
         let f = match t {
             CueTrackType::Audio => TrackFormat::Audio,
             CueTrackType::CdG => TrackFormat::CdG,
@@ -247,7 +250,7 @@ impl CueParser {
 
         if n.binary() == 1 {
             // CUE always ignores track 1's pregap, let's add it in here
-            let pregap = Index::new(Bcd::zero(), Msf::zero(), n, f, 0, Storage::PreGap);
+            let pregap = Index::new(Bcd::ZERO, Msf::ZERO, n, f, 0, Storage::PreGap);
 
             self.indices.push(pregap);
         }
@@ -255,7 +258,41 @@ impl CueParser {
         Ok(())
     }
 
-    /// INDEX number mm:ss:ff
+    /// PREGAP mm:ss:ff
+    ///
+    /// There can be only one PREGAP per track and it must appear before any INDEX
+    fn command_pregap(&mut self, params: &[&[u8]]) -> CdResult<()> {
+        let (track_number, _track_type, track_format) = match self.track {
+            Some(t) => t,
+            None => return Err(self.error_str("Track-less pregap")),
+        };
+
+        let msf = match from_buf(params[1]) {
+            Ok(b) => b,
+            Err(_) => return Err(self.error_str("Invalid index MSF")),
+        };
+
+        self.consume_bin_sectors(self.msf)?;
+
+        let pregap = Index::new(
+            Bcd::ZERO,
+            self.msf,
+            track_number,
+            track_format,
+            0,
+            Storage::PreGap,
+        );
+        self.indices.push(pregap);
+
+        self.msf += msf;
+        // Since the pregap is not stored in the file we need to advance the index_msf to avoid
+        // skipping some of the data
+        self.index_msf += msf;
+
+        Ok(())
+    }
+
+    /// INDEX bcd mm:ss:ff
     fn command_index(&mut self, params: &[&[u8]]) -> CdResult<()> {
         let (track_number, track_type, track_format) = match self.track {
             Some(t) => t,
@@ -274,7 +311,7 @@ impl CueParser {
 
         self.consume_bin_sectors(msf)?;
 
-        self.msf = self.msf + msf;
+        self.msf += msf;
 
         // Should be validated in `command_track`
         assert!(!self.bin_files.is_empty());
@@ -375,6 +412,7 @@ impl CueParser {
         }
 
         self.consumed_bytes += index_size;
+        self.index_msf = offset;
 
         Ok(())
     }

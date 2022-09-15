@@ -23,15 +23,14 @@ fn main() {
 
     match cdimage::cue::Cue::new(Path::new(file)) {
         Ok(mut c) => {
-            let mut sector = c.read_sector(msf).unwrap();
+            println!("{:?}", c.toc());
+            let sector = c.read_sector(msf.to_disc_position()).unwrap();
 
-            println!(
-                "form: {:?}",
-                sector.mode2_xa_subheader().unwrap().submode().form()
-            );
-            println!("format: {:?}", sector.metadata().format);
+            if let Ok(xa_subheader) = sector.mode2_xa_subheader() {
+                println!("XA Mode 2 form: {:?}", xa_subheader.submode().form());
+            }
 
-            let bytes = sector.data_2352().unwrap();
+            let bytes = sector.data_2352();
 
             hexdump(bytes);
         }

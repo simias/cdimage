@@ -12,12 +12,9 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use internal::IndexCache;
-use msf::Msf;
-use sector::{Metadata, Sector, SectorBuilder};
-use CdError;
-use CdResult;
-use Image;
-use Toc;
+use sector::Sector;
+use subchannel::{QData, Q};
+use {CdError, CdResult, DiscPosition, Image, Toc};
 
 use self::parser::CueParser;
 
@@ -46,7 +43,12 @@ impl Image for Cue {
         "CUE".to_string()
     }
 
-    fn read_sector(&mut self, msf: Msf) -> CdResult<Sector> {
+    fn read_sector(&mut self, position: DiscPosition) -> CdResult<Sector> {
+        let msf = match position {
+            DiscPosition::LeadIn(index) => return self.toc.build_toc_sector(index),
+            DiscPosition::Program(msf) => msf,
+        };
+
         let (pos, index) = match self.indices.find_index_for_msf(msf) {
             Some(i) => i,
             None => return Err(CdError::LeadOut),
@@ -77,17 +79,18 @@ impl Image for Cue {
             msf - index1.msf()
         };
 
-        let mut builder = SectorBuilder::new();
-
-        // Fill sector metadata
-        builder.set_metadata(Metadata {
-            msf,
-            track_msf,
-            index: index.index(),
+        let qdata = QData::Mode1 {
             track: index.track(),
-            format: index.format(),
-            session: index.session(),
-        });
+            index: index.index(),
+            track_msf,
+            disc_msf: msf,
+        };
+
+        let format = index.format();
+
+        let q = Q::from_qdata(qdata, format);
+
+        let mut sector = Sector::empty(q, format)?;
 
         // First let's read the sector data
         match index.private() {
@@ -104,7 +107,7 @@ impl Image for Cue {
 
                 let offset = offset + index_offset;
 
-                let res = builder.set_data_2352(|data| {
+                let res = sector.set_data_2352(|data| {
                     bin.file.seek(SeekFrom::Start(offset))?;
 
                     bin.file.read_exact(data)
@@ -115,12 +118,11 @@ impl Image for Cue {
                 }
             }
             Storage::PreGap => {
-                // We don't have data for this track, we'll let Sector generate it on the fly if
-                // needed
+                // We don't have data for this track, leave it empty
             }
         }
 
-        Ok(builder.unwrap())
+        Ok(sector)
     }
 
     fn toc(&self) -> &Toc {

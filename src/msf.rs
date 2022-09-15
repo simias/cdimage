@@ -8,7 +8,8 @@
 use std::str::FromStr;
 use std::{cmp, fmt, ops};
 
-use super::bcd::Bcd;
+use bcd::Bcd;
+use DiscPosition;
 
 /// CD "minute:second:frame" timestamp, given as triplet of *BCD*
 /// encoded bytes. In this context "frame" is synonymous with
@@ -17,14 +18,15 @@ use super::bcd::Bcd;
 pub struct Msf(Bcd, Bcd, Bcd);
 
 impl Msf {
-    /// Create a 00:00:00 MSF
-    pub fn zero() -> Msf {
-        Msf(Bcd::zero(), Bcd::zero(), Bcd::zero())
-    }
+    /// MSF for 00:00:00
+    pub const ZERO: Msf = Msf(Bcd::ZERO, Bcd::ZERO, Bcd::ZERO);
+
+    /// MSF for 99:54:73
+    pub const MAX: Msf = Msf(Bcd::TABLE[99], Bcd::TABLE[59], Bcd::TABLE[74]);
 
     /// Build an MSF from a BCD triplet. Returns `None` if `s` is
     /// greater than 0x59 or if `f` is greater than 0x74.
-    pub fn new(m: Bcd, s: Bcd, f: Bcd) -> Option<Msf> {
+    pub const fn new(m: Bcd, s: Bcd, f: Bcd) -> Option<Msf> {
         // Make sure the frame and seconds makes sense (there are only
         // 75 frames per second and obviously 60 seconds per minute)
         if s.bcd() < 0x60 || f.bcd() < 0x75 {
@@ -37,7 +39,7 @@ impl Msf {
     /// Convenience function to build an MSF from BCD values stored in
     /// an `u8`. Returns none if one of the values is not valid BCD of
     /// if it's not a valid Msf
-    pub fn from_bcd(m: u8, s: u8, f: u8) -> Option<Msf> {
+    pub const fn from_bcd(m: u8, s: u8, f: u8) -> Option<Msf> {
         let m = match Bcd::from_bcd(m) {
             Some(b) => b,
             None => return None,
@@ -57,13 +59,18 @@ impl Msf {
     }
 
     /// Return the internal BCD triplet
-    pub fn into_bcd(self) -> (Bcd, Bcd, Bcd) {
+    pub const fn into_bcd(self) -> (Bcd, Bcd, Bcd) {
         (self.0, self.1, self.2)
+    }
+
+    /// Takes this MSF as an absolute position and turn it into a `DiscPosition`
+    pub const fn to_disc_position(self) -> DiscPosition {
+        DiscPosition::Program(self)
     }
 
     /// Convert an MSF into a sector index. In this convention sector
     /// index 0 is MSF 00:00:00
-    pub fn sector_index(self) -> u32 {
+    pub const fn sector_index(self) -> u32 {
         let Msf(m, s, f) = self;
 
         let m = m.binary() as u32;
@@ -76,7 +83,7 @@ impl Msf {
 
     /// Build an MSF from a sector index. Returns None if the index is
     /// out of range.
-    pub fn from_sector_index(si: u32) -> Option<Msf> {
+    pub const fn from_sector_index(si: u32) -> Option<Msf> {
         let m = si / (60 * 75);
 
         if m > 99 {
@@ -88,11 +95,11 @@ impl Msf {
         let s = si / 75;
         let f = si % 75;
 
-        let m = Bcd::from_binary(m as u8).unwrap();
-        let s = Bcd::from_binary(s as u8).unwrap();
-        let f = Bcd::from_binary(f as u8).unwrap();
+        let m = Bcd::TABLE[m as usize];
+        let s = Bcd::TABLE[s as usize];
+        let f = Bcd::TABLE[f as usize];
 
-        Some(Msf::new(m, s, f).unwrap())
+        Some(Msf(m, s, f))
     }
 
     /// Return the MSF timestamp of the next sector. Returns `None` if
@@ -105,11 +112,11 @@ impl Msf {
         }
 
         if s.bcd() < 0x59 {
-            return Some(Msf(m, s.wrapping_next(), Bcd::zero()));
+            return Some(Msf(m, s.wrapping_next(), Bcd::ZERO));
         }
 
         if m.bcd() < 0x99 {
-            return Some(Msf(m.wrapping_next(), Bcd::zero(), Bcd::zero()));
+            return Some(Msf(m.wrapping_next(), Bcd::ZERO, Bcd::ZERO));
         }
 
         None
@@ -139,6 +146,12 @@ impl fmt::Display for Msf {
         let Msf(m, s, f) = *self;
 
         write!(fmt, "{}:{}:{}", m, s, f)
+    }
+}
+
+impl fmt::Debug for Msf {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self)
     }
 }
 
@@ -186,11 +199,23 @@ impl ops::Add for Msf {
     }
 }
 
+impl ops::AddAssign for Msf {
+    fn add_assign(&mut self, other: Self) {
+        *self = *self + other;
+    }
+}
+
+impl ops::SubAssign for Msf {
+    fn sub_assign(&mut self, other: Self) {
+        *self = *self - other;
+    }
+}
+
 impl FromStr for Msf {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut msf = [Bcd::zero(); 3];
+        let mut msf = [Bcd::ZERO; 3];
         let mut count = 0;
 
         for (i, s) in s.split(':').enumerate() {

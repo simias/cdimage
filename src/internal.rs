@@ -7,14 +7,7 @@ use std::cmp;
 use std::fmt;
 use std::path::PathBuf;
 
-use bcd::Bcd;
-use msf::Msf;
-
-use CdError;
-use CdResult;
-use Toc;
-use Track;
-use TrackFormat;
+use {Bcd, CdError, CdResult, Msf, Toc, Track, TrackFormat};
 
 /// A generic CD index implementation. Each image format can specialize it by adding its own
 /// `private` implementation.
@@ -223,7 +216,7 @@ impl<T> IndexCache<T> {
     /// Locate index1 for `track` and return its position along with a
     /// reference to the `Index` struct.
     pub fn find_index01_for_track(&self, track: Bcd) -> CdResult<(usize, &Index<T>)> {
-        self.find_index_for_track(track, Bcd::one())
+        self.find_index_for_track(track, Bcd::ONE)
     }
 
     /// Return the length of the given track starting at INDEX 01, not
@@ -268,12 +261,9 @@ impl<T> IndexCache<T> {
     }
 
     /// Build a table of contents with the current cache's contents
-    pub fn toc(&self) -> Toc {
-        let track_count = self
-            .indices
-            .last()
-            .map(|i| i.track)
-            .unwrap_or_else(Bcd::zero);
+    pub fn toc(&self) -> CdResult<Toc> {
+        let track_count = self.indices.last().map(|i| i.track).unwrap_or(Bcd::ZERO);
+
         let mut tracks = Vec::with_capacity(track_count.binary() as usize);
         for b in 1..=99 {
             let track_no = Bcd::from_binary(b).unwrap();
@@ -294,7 +284,7 @@ impl<T> IndexCache<T> {
             }
         }
 
-        Toc { tracks }
+        Toc::new(tracks)
     }
 }
 
@@ -302,7 +292,7 @@ impl<T> fmt::Debug for IndexCache<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut force_display = true;
         let mut session = 0;
-        let mut track = Bcd::zero();
+        let mut track = Bcd::ZERO;
 
         for i in &self.indices {
             if i.session != session || force_display {

@@ -33,88 +33,400 @@
 use bcd::Bcd;
 use msf::Msf;
 
-use SessionFormat;
+use {crc, CdError, CdResult, SessionFormat, TrackFormat};
 
-/// Common interface shared by all subchannels
-pub trait SubChannel {
-    /// Return the raw 12 bytes of subchannel data
-    fn raw(&self) -> &[u8; 12];
+/// Full contents of a Q subchannel frame, parsed. From this structure we should be able to
+/// regenerate the raw Subchannel Q data losslessly
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Q {
+    /// Decoded payload
+    data: QData,
+    /// ADR/Control byte
+    adr_control: AdrControl,
 }
 
-/// This struct contains the Subchannel P data of one sector.
-///
-/// This subchannel indicates the beginning of an information
-/// track. All bits of the p-channel of a Section should be set to the
-/// same value (per the standard).
-///
-/// This channel is generally ignored in favor of the Q subchannel.
-///
-/// See section 22.2 of ECMA-130 for more informations.
-pub struct SubChannelP {
-    /// Raw contents
-    bytes: [u8; 12],
-}
+impl Q {
+    /// Generate a Q from the given QData and track format
+    pub fn from_qdata(data: QData, format: TrackFormat) -> Q {
+        let adr_control = if format.is_audio() {
+            AdrControl::MODE1_AUDIO
+        } else {
+            AdrControl::MODE1_DATA
+        };
 
-impl SubChannelP {
-    /// Create a SubChannelP instance from 12 bytes of subchannel
-    /// data.
-    pub fn new(raw: [u8; 12]) -> SubChannelP {
-        SubChannelP { bytes: raw }
+        Q { data, adr_control }
     }
 
-    /// Return true if all the bits of the channel are set to the same
-    /// value as the standard mandates
-    pub fn valid(&self) -> bool {
-        if self.bytes[0] != 0 && self.bytes[0] != 0xff {
-            return false;
+    /// Generate a Q from raw subchannel Q data
+    pub fn from_raw(raw: [u8; 12]) -> CdResult<Q> {
+        let adr_control = AdrControl(raw[0]);
+        let data = QData::from_raw(raw)?;
+
+        Ok(Q { data, adr_control })
+    }
+
+    /// Generate a Q from raw interleaved subchannel data (this is what you get from a raw_rw dump
+    /// in cdrdao for instance)
+    pub fn from_raw_interleaved(raw: [u8; 96]) -> CdResult<Q> {
+        let mut subq = [0u8; 12];
+
+        for (bit, &r) in raw.iter().enumerate() {
+            // Subchannel Q is in bit 7
+            let v = (r & 0x40) != 0;
+
+            if !v {
+                continue;
+            }
+
+            subq[bit / 8] |= 1 << (7 - (bit & 7));
         }
 
-        for i in 1..12 {
-            if self.bytes[i] != self.bytes[i - 1] {
-                return false;
+        Q::from_raw(subq)
+    }
+
+    /// Generate the raw representation of this Q subchannel data
+    pub fn to_raw(&self) -> [u8; 12] {
+        self.data.to_raw(self.adr_control)
+    }
+
+    /// Returns true if this is a data sector
+    pub fn is_data(&self) -> bool {
+        self.adr_control.is_data()
+    }
+
+    /// Returns true if this is an audio sector
+    pub fn is_audio(&self) -> bool {
+        self.adr_control.is_audio()
+    }
+
+    /// Returns the parsed `QData`
+    pub fn data(&self) -> &QData {
+        &self.data
+    }
+}
+
+/// Possible contents of the Q subchannel data depending on the mode.
+///
+/// See section 22.3.2 of ECMA-130 for more details.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QData {
+    /// Mode 1 data in the user data area and the lead-out area:
+    Mode1 {
+        /// Current track number
+        track: Bcd,
+        /// Index within the track
+        index: Bcd,
+        /// MSF within the track. If we're in the pregap this value decreases until it reaches
+        /// INDEX01
+        track_msf: Msf,
+        /// Absolute MSF
+        disc_msf: Msf,
+    },
+    /// Mode 1 Table of content entry (in the lead-in):
+    Mode1Toc {
+        /// Which track this ToC entry is for
+        track: Bcd,
+        /// Address of the track's INDEX01
+        index1_msf: Msf,
+        /// MSF for this ToC entry in the lead-in. Normally ignored.
+        lead_in_msf: Msf,
+    },
+    /// Mode 1 Table of content entry with pointer set to 0xa0:
+    Mode1TocFirstTrack {
+        /// Number of the first track (usually 01)
+        first_track: Bcd,
+        /// Format of the session
+        session_format: SessionFormat,
+        /// MSF for this ToC entry in the lead-in. Normally ignored.
+        lead_in_msf: Msf,
+    },
+    /// Mode 1 Table of content entry with pointer set to 0xa1:
+    Mode1TocLastTrack {
+        /// Number of the last track
+        last_track: Bcd,
+        /// MSF for this ToC entry in the lead-in. Normally ignored.
+        lead_in_msf: Msf,
+    },
+    /// Mode 1 Table of content entry with pointer set to 0xa2:
+    Mode1TocLeadOut {
+        /// Absolute MSF of the first sector of the lead-out
+        lead_out_start: Msf,
+        /// MSF for this ToC entry in the lead-in. Normally ignored.
+        lead_in_msf: Msf,
+    },
+}
+
+impl QData {
+    /// Create a QData from raw subchannel Q data
+    pub fn from_raw(raw: [u8; 12]) -> CdResult<QData> {
+        let crc = crc::crc16(&raw[..10]);
+
+        if crc.to_be_bytes() != raw[10..12] {
+            return Err(CdError::InvalidSubQCRC);
+        }
+
+        let adr_ctrl = AdrControl(raw[0]);
+
+        if adr_ctrl.mode() != 1 {
+            // We might want to add Mode2 and Mode3 support here at
+            // some point. For the time being only Mode1 is supported.
+            return Err(CdError::Unsupported);
+        }
+
+        let track = match Bcd::from_bcd(raw[1]) {
+            Some(b) => b,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let min = match Bcd::from_bcd(raw[3]) {
+            Some(b) => b,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let sec = match Bcd::from_bcd(raw[4]) {
+            Some(b) => b,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let frac = match Bcd::from_bcd(raw[5]) {
+            Some(b) => b,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let msf = match Msf::new(min, sec, frac) {
+            Some(m) => m,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let zero = raw[6];
+        if zero != 0 {
+            return Err(CdError::Unsupported);
+        }
+
+        let ap_min = match Bcd::from_bcd(raw[7]) {
+            Some(b) => b,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let ap_sec = match Bcd::from_bcd(raw[8]) {
+            Some(b) => b,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let ap_frac = match Bcd::from_bcd(raw[9]) {
+            Some(b) => b,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let ap_msf = match Msf::new(ap_min, ap_sec, ap_frac) {
+            Some(m) => m,
+            None => return Err(CdError::Unsupported),
+        };
+
+        let d = if track.bcd() == 0 {
+            // We're in the lead-in, this is a TOC entry
+            let pointer = raw[2];
+
+            match pointer {
+                0xa0 => {
+                    let format = match ap_sec.bcd() {
+                        0x00 => SessionFormat::CdDaCdRom,
+                        0x10 => SessionFormat::Cdi,
+                        0x20 => SessionFormat::CdXa,
+                        _ => return Err(CdError::Unsupported),
+                    };
+
+                    if ap_frac.bcd() != 0 {
+                        return Err(CdError::Unsupported);
+                    }
+
+                    QData::Mode1TocFirstTrack {
+                        first_track: ap_min,
+                        session_format: format,
+                        lead_in_msf: msf,
+                    }
+                }
+                0xa1 => {
+                    if ap_sec.bcd() != 0 || ap_frac.bcd() != 0 {
+                        return Err(CdError::Unsupported);
+                    }
+
+                    QData::Mode1TocLastTrack {
+                        last_track: ap_min,
+                        lead_in_msf: msf,
+                    }
+                }
+                0xa2 => QData::Mode1TocLeadOut {
+                    lead_out_start: ap_msf,
+                    lead_in_msf: msf,
+                },
+                _ => {
+                    let ptrack = match Bcd::from_bcd(pointer) {
+                        Some(b) => b,
+                        None => return Err(CdError::Unsupported),
+                    };
+
+                    QData::Mode1Toc {
+                        track: ptrack,
+                        index1_msf: ap_msf,
+                        lead_in_msf: msf,
+                    }
+                }
+            }
+        } else {
+            let index = match Bcd::from_bcd(raw[2]) {
+                Some(b) => b,
+                None => return Err(CdError::Unsupported),
+            };
+
+            QData::Mode1 {
+                track,
+                index,
+                track_msf: msf,
+                disc_msf: ap_msf,
+            }
+        };
+
+        Ok(d)
+    }
+
+    /// Generate the raw representation of this Q subchannel data
+    pub fn to_raw(&self, adr_ctrl: AdrControl) -> [u8; 12] {
+        let mut subq = [0u8; 12];
+
+        subq[0] = adr_ctrl.0;
+
+        match self {
+            QData::Mode1 {
+                track,
+                index,
+                track_msf,
+                disc_msf,
+            } => {
+                subq[1] = track.bcd();
+                subq[2] = index.bcd();
+
+                let (m, s, f) = track_msf.into_bcd();
+
+                subq[3] = m.bcd();
+                subq[4] = s.bcd();
+                subq[5] = f.bcd();
+
+                let (m, s, f) = disc_msf.into_bcd();
+                subq[7] = m.bcd();
+                subq[8] = s.bcd();
+                subq[9] = f.bcd();
+            }
+            QData::Mode1Toc {
+                track,
+                index1_msf,
+                lead_in_msf,
+            } => {
+                subq[2] = track.bcd();
+
+                let (m, s, f) = lead_in_msf.into_bcd();
+
+                subq[3] = m.bcd();
+                subq[4] = s.bcd();
+                subq[5] = f.bcd();
+
+                let (m, s, f) = index1_msf.into_bcd();
+
+                subq[7] = m.bcd();
+                subq[8] = s.bcd();
+                subq[9] = f.bcd();
+            }
+            QData::Mode1TocFirstTrack {
+                first_track,
+                session_format,
+                lead_in_msf,
+            } => {
+                subq[2] = 0xa0;
+
+                let (m, s, f) = lead_in_msf.into_bcd();
+
+                subq[3] = m.bcd();
+                subq[4] = s.bcd();
+                subq[5] = f.bcd();
+
+                subq[7] = first_track.bcd();
+                subq[8] = match session_format {
+                    SessionFormat::CdDaCdRom => 0,
+                    SessionFormat::Cdi => 0x10,
+                    SessionFormat::CdXa => 0x20,
+                };
+            }
+            QData::Mode1TocLastTrack {
+                last_track,
+                lead_in_msf,
+            } => {
+                subq[2] = 0xa1;
+
+                let (m, s, f) = lead_in_msf.into_bcd();
+
+                subq[3] = m.bcd();
+                subq[4] = s.bcd();
+                subq[5] = f.bcd();
+
+                subq[7] = last_track.bcd();
+            }
+            QData::Mode1TocLeadOut {
+                lead_out_start,
+                lead_in_msf,
+            } => {
+                subq[2] = 0xa2;
+
+                let (m, s, f) = lead_in_msf.into_bcd();
+
+                subq[3] = m.bcd();
+                subq[4] = s.bcd();
+                subq[5] = f.bcd();
+
+                let (m, s, f) = lead_out_start.into_bcd();
+
+                subq[7] = m.bcd();
+                subq[8] = s.bcd();
+                subq[9] = f.bcd();
             }
         }
 
-        true
+        let crc = crc::crc16(&subq[..10]).to_be_bytes();
+
+        subq[10] = crc[0];
+        subq[11] = crc[1];
+
+        subq
     }
 }
 
-impl SubChannel for SubChannelP {
-    fn raw(&self) -> &[u8; 12] {
-        &self.bytes
-    }
-}
+/// The first byte of subchannel Q data, containing the mode and various attributes
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct AdrControl(u8);
 
-/// This struct contains the Subchannel Q data of one sector.
-pub struct SubChannelQ {
-    /// Raw contents
-    bytes: [u8; 12],
-}
+impl AdrControl {
+    /// A Mode1 audio AdrControl with no other attribute set
+    pub const MODE1_AUDIO: AdrControl = AdrControl(0x01);
 
-impl SubChannelQ {
-    /// Create a SubChannelQ instance from 12 bytes of subchannel
-    /// data.
-    pub fn new(raw: [u8; 12]) -> SubChannelQ {
-        SubChannelQ { bytes: raw }
-    }
+    /// A Mode1 data AdrControl with no other attribute set
+    pub const MODE1_DATA: AdrControl = AdrControl(0x41);
 
     /// Return true if this is a data track. For table of content
     /// sectors this flag applies to the target track.
-    pub fn data(&self) -> bool {
-        self.bytes[0] & 0x40 != 0
+    pub fn is_data(&self) -> bool {
+        self.0 & 0x40 != 0
     }
 
     /// Return true if this is an audio track. For table of content
     /// sectors this flag applies to the target track.
-    pub fn audio(&self) -> bool {
-        !self.data()
+    pub fn is_audio(&self) -> bool {
+        !self.is_data()
     }
 
     /// Return true if the "digital copy permitted" flag is set. For
     /// table of content sectors this flag applies to the target
     /// track.
-    pub fn digital_copy_permitted(&self) -> bool {
-        self.bytes[0] & 0x20 != 0
+    pub fn is_digital_copy_permitted(&self) -> bool {
+        self.0 & 0x20 != 0
     }
 
     /// Return true if this is an audio track and pre-emphasis is
@@ -123,13 +435,13 @@ impl SubChannelQ {
     /// For more informations on pre-emphasis check out
     /// http://wiki.hydrogenaud.io/index.php?title=Pre-emphasis
     pub fn pre_emphasis(&self) -> bool {
-        self.audio() && (self.bytes[0] & 0x10 != 0)
+        self.is_audio() && (self.0 & 0x10 != 0)
     }
 
     /// Return true if this is a 4-channel audio track. The vast
     /// majority of audio CDs are 2-channel (stereo).
     pub fn four_channel_audio(&self) -> bool {
-        self.audio() && (self.bytes[0] & 0x80 != 0)
+        self.is_audio() && (self.0 & 0x80 != 0)
     }
 
     /// Retrieve the mode of the data specified by this
@@ -142,201 +454,74 @@ impl SubChannelQ {
     /// This field is specified over 4 bits so theoretically 16
     /// different modes are possible.
     pub fn mode(&self) -> u8 {
-        self.bytes[0] & 0xf
+        self.0 & 0xf
     }
+}
 
-    /// Return the 16bit CRC stored at the end of the subchannel data.
-    pub fn crc(&self) -> u16 {
-        let msb = self.bytes[10] as u16;
-        let lsb = self.bytes[11] as u16;
+#[test]
+fn adr_control_attrs() {
+    assert!(AdrControl::MODE1_AUDIO.is_audio());
+    assert!(!AdrControl::MODE1_AUDIO.is_data());
+    assert_eq!(AdrControl::MODE1_AUDIO.mode(), 1);
 
-        (msb << 8) | lsb
-    }
+    assert!(!AdrControl::MODE1_DATA.is_audio());
+    assert!(AdrControl::MODE1_DATA.is_data());
+    assert_eq!(AdrControl::MODE1_DATA.mode(), 1);
+}
 
-    /// Parse the contents of this subchannel and return it as a
-    /// `QData`. This method does not validate the sector's CRC but
-    /// will return `QData::Unsupported` if it encounters a format
-    /// error.
-    pub fn parse_data(&self) -> QData {
-        if self.mode() != 1 {
-            // We might want to add Mode2 and Mode3 support here at
-            // some point. For the time being only Mode1 is supported.
-            return QData::Unsupported;
-        }
+#[test]
+fn subq_raw_rw() {
+    // Random Metal Gear Solid 1 raw subchannel data dumped with cdrdao
+    let raw_rw: [[u8; 96]; 3] = [
+        [
+            0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x40,
+            0x00, 0x40, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+            0x00, 0x00, 0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00,
+            0x40, 0x40, 0x40, 0x40, 0x40, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40,
+        ],
+        [
+            0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x40,
+            0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+            0x00, 0x00, 0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x00, 0x00, 0x40, 0x40,
+            0x00, 0x40, 0x00, 0x40, 0x40, 0x40, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40,
+        ],
+        [
+            0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40,
+            0x00, 0x00, 0x00, 0x00, 0xb3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x40,
+            0x00, 0x40, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+            0x00, 0x00, 0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x00, 0x00, 0x40, 0x40, 0x40, 0x40,
+            0x40, 0x00, 0x40, 0x40, 0x40, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x40,
+        ],
+    ];
 
-        let track = match Bcd::from_bcd(self.bytes[1]) {
-            Some(b) => b,
-            None => return QData::Unsupported,
-        };
+    for raw in raw_rw.iter() {
+        // Extract subchannel Q from the raw data
+        let mut subq = [0u8; 12];
+        for (bit, &r) in raw.iter().enumerate() {
+            // Subchannel Q is in bit 7
+            let v = (r & 0x40) != 0;
 
-        let min = match Bcd::from_bcd(self.bytes[3]) {
-            Some(b) => b,
-            None => return QData::Unsupported,
-        };
-
-        let sec = match Bcd::from_bcd(self.bytes[4]) {
-            Some(b) => b,
-            None => return QData::Unsupported,
-        };
-
-        let frac = match Bcd::from_bcd(self.bytes[5]) {
-            Some(b) => b,
-            None => return QData::Unsupported,
-        };
-
-        let msf = match Msf::new(min, sec, frac) {
-            Some(m) => m,
-            None => return QData::Unsupported,
-        };
-
-        let zero = self.bytes[6];
-        if zero != 0 {
-            return QData::Unsupported;
-        }
-
-        let ap_min = match Bcd::from_bcd(self.bytes[7]) {
-            Some(b) => b,
-            None => return QData::Unsupported,
-        };
-
-        let ap_sec = match Bcd::from_bcd(self.bytes[8]) {
-            Some(b) => b,
-            None => return QData::Unsupported,
-        };
-
-        let ap_frac = match Bcd::from_bcd(self.bytes[9]) {
-            Some(b) => b,
-            None => return QData::Unsupported,
-        };
-
-        let ap_msf = match Msf::new(ap_min, ap_sec, ap_frac) {
-            Some(m) => m,
-            None => return QData::Unsupported,
-        };
-
-        if track.bcd() == 0 {
-            // We're in the lead-in, this is a TOC entry
-            let pointer = self.bytes[2];
-
-            match pointer {
-                0xa0 => {
-                    let format = match ap_sec.bcd() {
-                        0x00 => SessionFormat::CddaCdRom,
-                        0x10 => SessionFormat::Cdi,
-                        0x20 => SessionFormat::Cdxa,
-                        _ => return QData::Unsupported,
-                    };
-
-                    if ap_frac.bcd() != 0 {
-                        return QData::Unsupported;
-                    }
-
-                    QData::Mode1TocFirstTrack(ap_min, format, msf)
-                }
-                0xa1 => {
-                    if ap_frac.bcd() != 0 || ap_sec.bcd() != 0 {
-                        return QData::Unsupported;
-                    }
-
-                    QData::Mode1TocLastTrack(ap_min, msf)
-                }
-                0xa2 => QData::Mode1TocLeadOut(ap_msf, msf),
-                _ => {
-                    let ptrack = match Bcd::from_bcd(pointer) {
-                        Some(b) => b,
-                        None => return QData::Unsupported,
-                    };
-
-                    QData::Mode1Toc(ptrack, ap_msf, msf)
-                }
+            if !v {
+                continue;
             }
-        } else {
-            let index = match Bcd::from_bcd(self.bytes[2]) {
-                Some(b) => b,
-                None => return QData::Unsupported,
-            };
 
-            QData::Mode1(track, index, msf, ap_msf)
+            subq[bit / 8] |= 1 << (7 - (bit & 7));
         }
+
+        let q = Q::from_raw_interleaved(*raw).unwrap();
+        let qr = Q::from_raw(subq).unwrap();
+
+        assert_eq!(q, qr);
+
+        let subq_generated = q.to_raw();
+        assert_eq!(subq, subq_generated)
     }
 }
-
-impl SubChannel for SubChannelQ {
-    fn raw(&self) -> &[u8; 12] {
-        &self.bytes
-    }
-}
-
-/// Possible contents of the Q subchannel data depending on the mode.
-///
-/// See section 22.3.2 of ECMA-130 for more details.
-pub enum QData {
-    /// Mode 1 data in the user data area and the lead-out area:
-    ///
-    /// * Track number
-    /// * Index
-    /// * MSF of this sector relative to the beginning of the track (index 01). In the prepap
-    ///   (index 00) it decreases until it reaches index 01 at 00:00:00.
-    /// * MSF of this sector relative to the beginning of the user data area. This is *not* an
-    ///   absolute MSF, you have to add 2 minutes (150 sectors) to get an absolute MSF.
-    Mode1(Bcd, Bcd, Msf, Msf),
-    /// Mode 1 Table of content entry (in the lead-in):
-    ///
-    /// * Track number pointer
-    /// * Absolute MSF of Index 00 the track designed by the pointer
-    /// * MSF of this TOC entry in the lead-in
-    Mode1Toc(Bcd, Msf, Msf),
-    /// Mode 1 Table of content entry with pointer set to 0xa0:
-    ///
-    /// * Track number of the first track in the user area
-    /// * Session format (stored in the p-sec field)
-    /// * MSF of this TOC entry in the lead-in
-    Mode1TocFirstTrack(Bcd, SessionFormat, Msf),
-    /// Mode 1 Table of content entry with pointer set to 0xa1:
-    ///
-    /// * Track number of the last track in the user area
-    /// * MSF of this TOC entry in the lead-in
-    Mode1TocLastTrack(Bcd, Msf),
-    /// Mode 1 Table of content entry with pointer set to 0xa2:
-    ///
-    /// * Absolute MSF of the lead-out track
-    /// * MSF of this TOC entry in the lead-in
-    Mode1TocLeadOut(Msf, Msf),
-    /// Unsupported or corrupted data. Use `Subchannel::raw()` if you want to access the raw data
-    /// directly for further processing.
-    Unsupported,
-}
-
-/// This struct is used for subchannels where no special handling is
-/// implemented.
-pub struct SubChannelBasic {
-    /// Raw contents
-    bytes: [u8; 12],
-}
-
-impl SubChannelBasic {
-    /// Create a SubChannelBasic instance from 12 bytes of subchannel
-    /// data.
-    pub fn new(raw: [u8; 12]) -> SubChannelBasic {
-        SubChannelBasic { bytes: raw }
-    }
-}
-
-impl SubChannel for SubChannelBasic {
-    fn raw(&self) -> &[u8; 12] {
-        &self.bytes
-    }
-}
-
-/// This struct contains the Subchannel R data for one sector.
-pub type SubChannelR = SubChannelBasic;
-/// This struct contains the Subchannel S data for one sector.
-pub type SubChannelS = SubChannelBasic;
-/// This struct contains the Subchannel T data for one sector.
-pub type SubChannelT = SubChannelBasic;
-/// This struct contains the Subchannel U data for one sector.
-pub type SubChannelU = SubChannelBasic;
-/// This struct contains the Subchannel V data for one sector.
-pub type SubChannelV = SubChannelBasic;
-/// This struct contains the Subchannel W data for one sector.
-pub type SubChannelW = SubChannelBasic;
