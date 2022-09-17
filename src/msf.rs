@@ -21,8 +21,8 @@ impl Msf {
     /// MSF for 00:00:00
     pub const ZERO: Msf = Msf(Bcd::ZERO, Bcd::ZERO, Bcd::ZERO);
 
-    /// MSF for 99:00:00
-    pub const T_99_00_00: Msf = Msf(Bcd::MAX, Bcd::ZERO, Bcd::ZERO);
+    /// MSF for 97:30:00
+    pub const T_97_30_00: Msf = Msf(Bcd::TABLE[97], Bcd::TABLE[30], Bcd::ZERO);
 
     /// MSF for 99:54:73
     pub const MAX: Msf = Msf(Bcd::TABLE[99], Bcd::TABLE[59], Bcd::TABLE[74]);
@@ -183,21 +183,18 @@ impl fmt::Debug for Msf {
     }
 }
 
-impl cmp::PartialOrd for Msf {
-    fn partial_cmp(&self, other: &Msf) -> Option<cmp::Ordering> {
-        let a = self.as_u32_bcd();
-        let b = other.as_u32_bcd();
-
-        a.partial_cmp(&b)
-    }
-}
-
 impl cmp::Ord for Msf {
     fn cmp(&self, other: &Msf) -> cmp::Ordering {
         let a = self.as_u32_bcd();
         let b = other.as_u32_bcd();
 
         a.cmp(&b)
+    }
+}
+
+impl cmp::PartialOrd for Msf {
+    fn partial_cmp(&self, other: &Msf) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

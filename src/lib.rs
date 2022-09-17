@@ -11,7 +11,7 @@ extern crate thiserror;
 pub mod bcd;
 pub mod crc;
 pub mod cue;
-mod disc_position;
+pub mod disc_position;
 pub mod internal;
 pub mod msf;
 pub mod sector;
@@ -171,6 +171,10 @@ pub enum CdError {
     InvalidDiscPosition,
     #[error("Attempted to build a lead-out sector before lead-out start")]
     InvalidLeadOutPosition,
+    #[error("Couldn't handle disc position that's before the lead-in")]
+    PreLeadInPosition,
+    #[error("Couldn't handle disc position that's outside of the disc")]
+    OutOfDiscPosition,
 }
 
 /// Convenience type alias for a `Result<R, CdError>`

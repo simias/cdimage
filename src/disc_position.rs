@@ -1,8 +1,12 @@
+//! This module deals with absolute positioning anywhere within the Lead-In or Program area
+//! (including lead-out) of the dics
+
+use std::cmp;
 use std::fmt;
 use std::ops;
 use std::str::FromStr;
 
-use {CdError, Msf};
+use {CdError, CdResult, Msf};
 
 /// An enum that can describe any position on the disc, be it in the lead-in, program data or
 /// lead-out
@@ -31,16 +35,17 @@ impl DiscPosition {
     /// should *at least* be `3 * (99 + 3) = 306` (~4seconds) lead-in sectors to accommodate the
     /// biggest ToC for 99 tracks.
     ///
-    /// A few values taken with my PlayStation drive:
-    ///
-    /// - Ridge Racer revolution: ~01:04:00 to the program area
-    /// - MGS1 disc 1: ~01:05:25 to the program area
-    /// - Tame Impala (CD-DA): ~01:00:00 to the program area
-    ///
-    /// I settled on one full minute of lead-in for simplicity.
-    pub const INNERMOST: DiscPosition = DiscPosition::LeadIn(Msf::T_99_00_00);
+    /// Originally I used 99:00:00 because during my tests on the PlayStation I seemed to always
+    /// start roughly 1 minute before the start of track 01 but then I decided to base myself on
+    /// the CD standard which states that the lead-in must start at a maximum radius of 23mm and
+    /// the program area must start at a maximum radius of 25mm. With a pitch of 1.6µm that gives
+    /// us a little over 2 and a half minutes of lead-in.
+    pub const INNERMOST: DiscPosition = DiscPosition::LeadIn(DiscPosition::INNERMOST_MSF);
 
-    /// Position at the start of the progam area (MSF 00:00:00)
+    /// See DiscPosition::INNERMOST's docs
+    pub const INNERMOST_MSF: Msf = Msf::T_97_30_00;
+
+    /// Position at the start of the program area (MSF 00:00:00)
     pub const ZERO: DiscPosition = DiscPosition::Program(Msf::ZERO);
 
     /// Returns true if this position is within the lead-in area
@@ -93,6 +98,100 @@ impl DiscPosition {
             },
         }
     }
+
+    /// Returns the approximate track length in mm from the start of the lead-in to this position,
+    /// assuming a standard 16mm per sector
+    pub fn track_length_mm(self) -> CdResult<u32> {
+        if self < DiscPosition::INNERMOST {
+            return Err(CdError::PreLeadInPosition);
+        }
+
+        let nsectors = match self {
+            DiscPosition::LeadIn(msf) => {
+                if msf < DiscPosition::INNERMOST_MSF {
+                    return Err(CdError::PreLeadInPosition);
+                }
+
+                msf.sector_index() - DiscPosition::INNERMOST_MSF.sector_index()
+            }
+            DiscPosition::Program(msf) => {
+                // Lead-in sectors
+                let lio = Msf::MAX.sector_index() + 1 - DiscPosition::INNERMOST_MSF.sector_index();
+
+                lio + msf.sector_index()
+            }
+        };
+
+        Ok(nsectors * CD_FRAME_LENGTH_MM)
+    }
+
+    /// Approximate number of rotations required to go from the beginning of the lead-in to the current
+    /// position, assuming a standard CD pitch of 1.6µm
+    pub fn disc_turns(self) -> CdResult<f32> {
+        // I use an approximative formula where the spiral is considered to be a succession of
+        // circles since it makes the maths simpler. I suspect (although I haven't checked) that
+        // whatever imprecision this introduces is dwarfed by the mechanical tolerances of typical
+        // CDs.
+        //
+        // See https://www.giangrandi.ch/soft/spiral/spiral.shtml
+        use std::f32::consts::PI;
+
+        let thickness = CD_PITCH_MM;
+        let d = CD_LEAD_IN_RADIUS.to_millis() * 2.;
+        let l = self.track_length_mm()? as f32;
+
+        let dh2 = (d - thickness) * (d - thickness);
+
+        let turns = ((((4. * thickness * l) / PI) + dh2).sqrt() - d + thickness) / (2. * thickness);
+
+        Ok(turns)
+    }
+
+    /// Returns an approximate radius from the center of the disc to the current position, assuming
+    /// a standard CD pitch of 1.6µm
+    pub fn disc_radius(self) -> CdResult<Radius> {
+        self.disc_turns().map(|t| {
+            let r0 = CD_LEAD_IN_RADIUS.to_millis();
+            let thickness = CD_PITCH_MM;
+
+            Radius::from_millis(r0 + t * thickness)
+        })
+    }
+
+    /// Returns the approximate disc position for the given radius from the center of the disc.
+    pub fn from_radius(r: Radius) -> CdResult<DiscPosition> {
+        use std::f32::consts::PI;
+
+        if r > CD_PROGRAM_RADIUS_MAX {
+            return Err(CdError::OutOfDiscPosition);
+        }
+
+        let r0 = CD_LEAD_IN_RADIUS.to_millis();
+        let r1 = r.to_millis();
+        let thickness = CD_PITCH_MM;
+
+        if r0 > r1 {
+            return Err(CdError::PreLeadInPosition);
+        }
+
+        let turns = (r1 - r0) / thickness;
+
+        // Where does this come from? We approximate the spiral as a series of circles and we sum
+        // the radiuses from r0 to r1, increasing by thickness every time. If you reduce the
+        // equation, you end up with the following:
+        let l = PI * turns * (r0 * 2. + thickness * (turns - 1.));
+
+        let nsectors = l / (CD_FRAME_LENGTH_MM as f32);
+
+        let msf = match Msf::from_sector_index(nsectors.round() as u32) {
+            Some(msf) => msf,
+            None => return Err(CdError::OutOfDiscPosition),
+        };
+
+        DiscPosition::INNERMOST
+            .checked_add(msf)
+            .ok_or(CdError::OutOfDiscPosition)
+    }
 }
 
 impl fmt::Display for DiscPosition {
@@ -140,6 +239,24 @@ impl ops::AddAssign<Msf> for DiscPosition {
     }
 }
 
+impl cmp::Ord for DiscPosition {
+    fn cmp(&self, other: &DiscPosition) -> cmp::Ordering {
+        use DiscPosition::*;
+
+        match (self, other) {
+            (LeadIn(_), Program(_)) => cmp::Ordering::Less,
+            (Program(_), LeadIn(_)) => cmp::Ordering::Greater,
+            (LeadIn(a), LeadIn(b)) => a.cmp(b),
+            (Program(a), Program(b)) => a.cmp(b),
+        }
+    }
+}
+impl cmp::PartialOrd for DiscPosition {
+    fn partial_cmp(&self, other: &DiscPosition) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl FromStr for DiscPosition {
     type Err = CdError;
 
@@ -156,6 +273,154 @@ impl FromStr for DiscPosition {
             _ => Err(CdError::InvalidDiscPosition),
         }
     }
+}
+
+/// A radius from the center of the CD, micrometer precision
+#[derive(PartialEq, Eq, Copy, Clone, PartialOrd, Ord)]
+pub struct Radius(u16);
+
+impl Radius {
+    /// Create a Radius for the given distance in micrometers
+    pub const fn from_micros(micros: u16) -> Radius {
+        Radius(micros)
+    }
+
+    /// Returns the radius in millimeters
+    pub fn to_millis(self) -> f32 {
+        f32::from(self.0) / 1000.
+    }
+
+    /// Create a Radius for the given distance in millimeters
+    pub fn from_millis(millis: f32) -> Radius {
+        Radius((millis * 1000.).round() as u16)
+    }
+
+    /// Offset the current Radius position by the given number of tracks (assuming a standard pitch
+    /// of 1.6µm). Returns an error if the radius ends up before the start of the lead-in or
+    /// outside of the program area.
+    pub fn offset_tracks(self, tracks: i32) -> CdResult<Radius> {
+        let mut r = self.to_millis();
+
+        r += (tracks as f32) * CD_PITCH_MM;
+
+        if r < CD_LEAD_IN_RADIUS.to_millis() {
+            return Err(CdError::PreLeadInPosition);
+        }
+
+        if r > CD_PROGRAM_RADIUS_MAX.to_millis() {
+            return Err(CdError::OutOfDiscPosition);
+        }
+
+        Ok(Radius::from_millis(r))
+    }
+}
+
+impl fmt::Display for Radius {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}.{:03}mm", self.0 / 1000, self.0 % 1000)
+    }
+}
+
+impl fmt::Debug for Radius {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self)
+    }
+}
+
+/// Standard CD track pitch in millimeters
+pub const CD_PITCH_MM: f32 = 0.0016;
+
+/// Standard CD inner lead-in radius (maximum radius for the start of the lead-in)
+pub const CD_LEAD_IN_RADIUS: Radius = Radius::from_micros(23_000);
+
+/// Standard CD maximum radius of the program area
+pub const CD_PROGRAM_RADIUS_MAX: Radius = Radius::from_micros(59_000);
+
+/// Length of a frame in mm. 16mm Assuming a standard scanning speed of 1.2m/s
+pub const CD_FRAME_LENGTH_MM: u32 = 16;
+
+#[test]
+fn test_disc_turns() {
+    use std::f32::consts::PI;
+
+    // Sectors per turn at the start of the lead-in, approximated as a circle
+    let sectors_per_turn = (2. * PI * CD_LEAD_IN_RADIUS.to_millis()) / (CD_FRAME_LENGTH_MM as f32);
+
+    let sectors_per_turn = sectors_per_turn.round() as u32;
+
+    let p = DiscPosition::INNERMOST;
+    // If we don't make too many turns the radius increase will be negligible, so the linear
+    // distance for every round should be roughly the same and we can check that it increases
+    // linearly
+    for i in 0..30 {
+        let p = p + Msf::from_sector_index(sectors_per_turn * i).unwrap();
+
+        assert_eq!(p.disc_turns().unwrap().round() as u32, i);
+    }
+}
+
+#[test]
+fn test_disc_radius() {
+    // The standard states that the lead-in must start at a maximum radius of 23mm
+    let dp = DiscPosition::INNERMOST;
+    let r = dp.disc_radius().unwrap();
+    assert_eq!(r, Radius::from_micros(23_000));
+
+    // The standard states that the program must start at a maximum radius of 25mm so our
+    // approximation here seems reasonable.
+    let dp: DiscPosition = "+00:00:00".parse().unwrap();
+    let r = dp.disc_radius().unwrap();
+    assert_eq!(r, Radius::from_micros(24_913));
+
+    let dp: DiscPosition = "+26:42:29".parse().unwrap();
+    let r = dp.disc_radius().unwrap();
+    assert_eq!(r, Radius::from_micros(40_000));
+
+    // A very rough measurement using Legend of Legaia in the lead-out gave me about 50.5mm for the
+    // sector at 51:40:20. The estimated value of 50.1 millimeters seems slightly too low but
+    // probably reasonable given the amount of approximation in these calculations and the
+    // variation between discs.
+    let dp: DiscPosition = "+51:40:20".parse().unwrap();
+    let r = dp.disc_radius().unwrap();
+    assert_eq!(r, Radius::from_micros(50_154));
+
+    // A standard CD can store roughly 74 minutes of content, and the maximum radius for the
+    // program area is 59mm
+    let dp: DiscPosition = "+74:00:00".parse().unwrap();
+    let r = dp.disc_radius().unwrap();
+    assert_eq!(r, Radius::from_micros(57_743));
+}
+
+#[test]
+fn disc_position_from_radius() {
+    let to_test = &[
+        (CD_LEAD_IN_RADIUS, "<97:30:00"),
+        (Radius::from_micros(24_916), "+00:00:16"),
+        (Radius::from_micros(25_000), "+00:07:06"),
+        (Radius::from_micros(40_000), "+26:42:28"),
+        (Radius::from_micros(59_000), "+78:00:08"),
+    ];
+
+    for &(r, dp) in to_test {
+        let expected: DiscPosition = dp.parse().unwrap();
+        assert_eq!(DiscPosition::from_radius(r).unwrap(), expected);
+
+        // Make sure the backward conversion takes us back where we started, with some rounding to
+        // account for floating point precision issues.
+        assert_eq!(
+            (expected.disc_radius().unwrap().to_millis() * 10.).round(),
+            (r.to_millis() * 10.).round()
+        );
+    }
+}
+
+#[test]
+fn radius_to_string() {
+    assert_eq!(Radius(0).to_string().as_str(), "0.000mm");
+    assert_eq!(Radius(50_000).to_string().as_str(), "50.000mm");
+    assert_eq!(Radius(12_345).to_string().as_str(), "12.345mm");
+    assert_eq!(Radius(10_001).to_string().as_str(), "10.001mm");
+    assert_eq!(Radius(1).to_string().as_str(), "0.001mm");
 }
 
 #[test]
@@ -247,10 +512,10 @@ fn disc_position_add() {
 fn disc_position_format() {
     let to_test = &[
         (DiscPosition::ZERO, "+00:00:00"),
-        (DiscPosition::LeadIn(Msf::T_99_00_00), "<99:00:00"),
+        (DiscPosition::LeadIn(Msf::T_97_30_00), "<97:30:00"),
         (
-            DiscPosition::LeadIn(Msf::T_99_00_00).next().unwrap(),
-            "<99:00:01",
+            DiscPosition::LeadIn(Msf::T_97_30_00).next().unwrap(),
+            "<97:30:01",
         ),
         (
             DiscPosition::LeadIn(Msf::from_bcd(0x99, 0x59, 0x74).unwrap()),
