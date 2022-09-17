@@ -51,7 +51,7 @@ impl Image for Cue {
 
         let (pos, index) = match self.indices.find_index_for_msf(msf) {
             Some(i) => i,
-            None => return Err(CdError::LeadOut),
+            None => return self.toc.build_lead_out_sector(msf),
         };
 
         // First we compute the relative track MSF

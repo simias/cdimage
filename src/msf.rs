@@ -66,6 +66,21 @@ impl Msf {
         (self.0, self.1, self.2)
     }
 
+    /// Returns the value of the minutes in this MSF
+    pub const fn minutes(self) -> u8 {
+        self.0.binary()
+    }
+
+    /// Returns the value of the seconds in this MSF
+    pub const fn seconds(self) -> u8 {
+        self.1.binary()
+    }
+
+    /// Returns the value of the frames in this MSF
+    pub const fn frames(self) -> u8 {
+        self.2.binary()
+    }
+
     /// Takes this MSF as an absolute position and turn it into a `DiscPosition`
     pub const fn to_disc_position(self) -> DiscPosition {
         DiscPosition::Program(self)

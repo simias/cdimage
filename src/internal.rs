@@ -175,8 +175,8 @@ impl<T> IndexCache<T> {
         self.indices.get(pos)
     }
 
-    /// Locate the index directly before `msf` and return its
-    /// position along with a reference to the `Index` struct.
+    /// Locate the index directly before `msf` and return its position along with a reference to
+    /// the `Index` struct. Returns `None` if the index is in the lead-out.
     pub fn find_index_for_msf(&self, msf: Msf) -> Option<(usize, &Index<T>)> {
         let sector = msf.sector_index();
 

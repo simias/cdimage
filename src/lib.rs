@@ -141,8 +141,6 @@ pub enum CdError {
             For instance when one attempts to retrieve CD-ROM payloads on an audio track."
     )]
     BadFormat,
-    #[error("Attempted to access a sector past the end of the CD")]
-    LeadOut,
     #[error("Unexpected or corrupted image format `{path}`|{line}: {desc}")]
     ParseError {
         path: PathBuf,
@@ -171,6 +169,8 @@ pub enum CdError {
     InvalidMsf,
     #[error("Invalid or unexpected disc position format")]
     InvalidDiscPosition,
+    #[error("Attempted to build a lead-out sector before lead-out start")]
+    InvalidLeadOutPosition,
 }
 
 /// Convenience type alias for a `Result<R, CdError>`

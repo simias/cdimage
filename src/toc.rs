@@ -35,7 +35,7 @@ impl Toc {
         &self.tracks
     }
 
-    /// Generate a lead-in Toc sector for the given `index`.
+    /// Generate a lead-in ToC sector for the given `index`.
     pub fn build_toc_sector(&self, lead_in_msf: Msf) -> CdResult<Sector> {
         let index = (Msf::MAX - lead_in_msf).sector_index();
 
@@ -100,6 +100,39 @@ impl Toc {
         };
 
         Sector::empty(q, fmt)
+    }
+
+    /// Generate a lead-out sector for the given position. Returns an error if position is before
+    /// the start of the lead-out.
+    ///
+    /// Note that this function will keep generating a lead-out as far as 99:59:74 even though in
+    /// practice it doesn't make a lot of sense and on a real disc we'd long be out of bounds. On
+    /// the other hand there doesn't seem to be a very obvious reasonable choice for how long the
+    /// lead-out should be allowed to be since it'll vary depending on a vast number of factors and
+    /// the various CD image formats don't typically store this information anyway.
+    pub fn build_lead_out_sector(&self, disc_msf: Msf) -> CdResult<Sector> {
+        let los = self.lead_out_start();
+
+        if disc_msf < los {
+            return Err(CdError::InvalidLeadOutPosition);
+        }
+
+        let lead_out_msf = disc_msf - los;
+
+        // I'm not sure what the format of the lead-out should be but in practice it seems
+        // to be the same type as the last sector. It should certainly match the format of
+        // Mode1TocLeadOut in `build_toc_sector`
+        let t = self.tracks.last().unwrap();
+        let format = t.format;
+
+        let qdata = QData::Mode1LeadOut {
+            lead_out_msf,
+            disc_msf,
+        };
+
+        let q = Q::from_qdata(qdata, format);
+
+        Sector::empty(q, format)
     }
 
     /// Returns the MSF of the first sector in the lead-out
@@ -192,6 +225,47 @@ fn ridgeracer_toc() -> Toc {
         .collect();
 
     Toc::new(tracks).unwrap()
+}
+
+#[test]
+fn lead_out_generation() {
+    let toc = ridgeracer_toc();
+    let expected: &[[u8; 12]] = &[
+        [
+            0x01, 0xaa, 0x01, 0x00, 0x00, 0x00, 0x00, 0x69, 0x48, 0x74, 0x9f, 0x33,
+        ],
+        [
+            0x01, 0xaa, 0x01, 0x00, 0x00, 0x01, 0x00, 0x69, 0x49, 0x00, 0x38, 0x40,
+        ],
+        [
+            0x01, 0xaa, 0x01, 0x00, 0x00, 0x02, 0x00, 0x69, 0x49, 0x01, 0xc6, 0xb3,
+        ],
+        [
+            0x01, 0xaa, 0x01, 0x00, 0x00, 0x03, 0x00, 0x69, 0x49, 0x02, 0x5c, 0x81,
+        ],
+    ];
+
+    let mut msf = toc.lead_out_start();
+
+    for exp in expected.iter() {
+        let s = toc.build_lead_out_sector(msf).unwrap();
+
+        let raw = s.q().to_raw();
+
+        print!("{} [", msf);
+        for &b in raw.iter() {
+            print!("0x{:02x},", b);
+        }
+        println!("],");
+
+        // Make sure that we convert back to the same thing
+        let q = Q::from_raw(raw).unwrap();
+        assert_eq!(q, s.q().clone());
+
+        assert_eq!(raw, *exp);
+
+        msf = msf.next().unwrap();
+    }
 }
 
 #[test]
