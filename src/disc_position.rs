@@ -125,56 +125,31 @@ impl DiscPosition {
         Ok(nsectors * CD_FRAME_LENGTH_MM)
     }
 
-    /// Approximate number of rotations required to go from the beginning of the lead-in to the current
-    /// position, assuming a standard CD pitch of 1.6µm
-    pub fn disc_turns(self) -> CdResult<f32> {
-        // I use an approximative formula where the spiral is considered to be a succession of
-        // circles since it makes the maths simpler. I suspect (although I haven't checked) that
-        // whatever imprecision this introduces is dwarfed by the mechanical tolerances of typical
-        // CDs.
-        //
-        // See https://www.giangrandi.ch/soft/spiral/spiral.shtml
-        use std::f32::consts::PI;
-
-        let thickness = CD_PITCH_MM;
-        let d = CD_LEAD_IN_RADIUS.to_millis() * 2.;
-        let l = self.track_length_mm()? as f32;
-
-        let dh2 = (d - thickness) * (d - thickness);
-
-        let turns = ((((4. * thickness * l) / PI) + dh2).sqrt() - d + thickness) / (2. * thickness);
-
-        Ok(turns)
-    }
-
-    /// Returns an approximate radius from the center of the disc to the current position, assuming
-    /// a standard CD pitch of 1.6µm
-    pub fn disc_radius(self) -> CdResult<Radius> {
-        self.disc_turns().map(|t| {
-            let r0 = CD_LEAD_IN_RADIUS.to_millis();
-            let thickness = CD_PITCH_MM;
-
-            Radius::from_millis(r0 + t * thickness)
-        })
-    }
-
     /// Returns the approximate disc position for the given radius from the center of the disc.
     pub fn from_radius(r: Radius) -> CdResult<DiscPosition> {
-        use std::f32::consts::PI;
+        let r0 = CD_LEAD_IN_RADIUS.to_millis();
+        let r1 = r.to_millis();
+        let thickness = CD_PITCH_MM;
 
         if r > CD_PROGRAM_RADIUS_MAX {
             return Err(CdError::OutOfDiscPosition);
         }
-
-        let r0 = CD_LEAD_IN_RADIUS.to_millis();
-        let r1 = r.to_millis();
-        let thickness = CD_PITCH_MM;
 
         if r0 > r1 {
             return Err(CdError::PreLeadInPosition);
         }
 
         let turns = (r1 - r0) / thickness;
+
+        DiscPosition::from_turns(turns)
+    }
+
+    /// Returns the approximate disc position for the given amount of turns from the start of the
+    /// lead-in
+    pub fn from_turns(turns: f32) -> CdResult<DiscPosition> {
+        use std::f32::consts::PI;
+        let r0 = CD_LEAD_IN_RADIUS.to_millis();
+        let thickness = CD_PITCH_MM;
 
         // Where does this come from? We approximate the spiral as a series of circles and we sum
         // the radiuses from r0 to r1, increasing by thickness every time. If you reduce the
@@ -191,6 +166,56 @@ impl DiscPosition {
         DiscPosition::INNERMOST
             .checked_add(msf)
             .ok_or(CdError::OutOfDiscPosition)
+    }
+
+    /// Approximate number of rotations required to go from the beginning of the lead-in to the current
+    /// position, assuming a standard CD pitch of 1.6µm
+    pub fn disc_turns(self) -> CdResult<f32> {
+        // I use an approximative formula where the spiral is considered to be a succession of
+        // circles since it makes the maths simpler. I suspect (although I haven't checked) that
+        // whatever imprecision this introduces is dwarfed by the mechanical tolerances of typical
+        // CDs.
+        //
+        // We basically start with the equation from `from_turns`:
+        //
+        //   l = PI * turns * (r0 * 2. + thickness * (turns - 1.))
+        //
+        // Then we solve for `turns` which gives us the quadratic equation:
+        //
+        //   PI * thickness * turn * turn + 2. * PI * (r0 - thickness / 2) * turn - l = 0
+        //
+        // Solving this equation gives us the formula below
+        use std::f32::consts::PI;
+
+        let thickness = CD_PITCH_MM;
+        let r0 = CD_LEAD_IN_RADIUS.to_millis();
+        let l = self.track_length_mm()? as f32;
+
+        let b = r0 - thickness / 2.;
+        let b2 = b * b;
+
+        let turns = ((thickness / 2. - r0) + (b2 + l * (thickness / PI)).sqrt()) / thickness;
+
+        Ok(turns)
+    }
+
+    /// Offset the current position by the given number of `turns` of the spiral. Returns an error
+    /// if the resulting position is out of range
+    pub fn offset_turns(self, turn_offset: i32) -> CdResult<DiscPosition> {
+        let turns = self.disc_turns()? + (turn_offset as f32);
+
+        DiscPosition::from_turns(turns)
+    }
+
+    /// Returns an approximate radius from the center of the disc to the current position, assuming
+    /// a standard CD pitch of 1.6µm
+    pub fn disc_radius(self) -> CdResult<Radius> {
+        self.disc_turns().map(|t| {
+            let r0 = CD_LEAD_IN_RADIUS.to_millis();
+            let thickness = CD_PITCH_MM;
+
+            Radius::from_millis(r0 + t * thickness)
+        })
     }
 }
 
@@ -293,25 +318,6 @@ impl Radius {
     /// Create a Radius for the given distance in millimeters
     pub fn from_millis(millis: f32) -> Radius {
         Radius((millis * 1000.).round() as u16)
-    }
-
-    /// Offset the current Radius position by the given number of tracks (assuming a standard pitch
-    /// of 1.6µm). Returns an error if the radius ends up before the start of the lead-in or
-    /// outside of the program area.
-    pub fn offset_tracks(self, tracks: i32) -> CdResult<Radius> {
-        let mut r = self.to_millis();
-
-        r += (tracks as f32) * CD_PITCH_MM;
-
-        if r < CD_LEAD_IN_RADIUS.to_millis() {
-            return Err(CdError::PreLeadInPosition);
-        }
-
-        if r > CD_PROGRAM_RADIUS_MAX.to_millis() {
-            return Err(CdError::OutOfDiscPosition);
-        }
-
-        Ok(Radius::from_millis(r))
     }
 }
 
