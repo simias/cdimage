@@ -97,8 +97,6 @@ pub enum SessionFormat {
 pub enum TrackFormat {
     /// CD-DA audio track (red book audio)
     Audio,
-    /// CD-G track (CD-Graphics)
-    CdG,
     /// CD-ROM Mode1 data
     Mode1,
     /// CD-ROM XA Mode 2 data

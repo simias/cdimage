@@ -118,8 +118,6 @@ impl Sector {
         // Calculate and add the ECC/EDC data
         match self.format {
             TrackFormat::Audio => (),
-            // XXX No idea about this one
-            TrackFormat::CdG => (),
             TrackFormat::Mode1 => {
                 let crc = crc32(&self.data[0..2064]).to_le_bytes();
                 self.data[2064] = crc[0];
@@ -170,6 +168,60 @@ impl Sector {
                         self.data[2349] = crc[1];
                         self.data[2350] = crc[2];
                         self.data[2351] = crc[3];
+                    }
+                }
+            }
+        }
+    }
+
+    /// Returns false if the sector's EDC doesn't match the computed value from its contents.
+    /// Returns true if the EDC is valid or if the sector does not contain any EDC (for instance
+    /// for a CD-DA audio track)
+    pub fn edc_valid(&self) -> bool {
+        match self.format {
+            TrackFormat::Audio => true,
+            TrackFormat::Mode1 => {
+                let crc = crc32(&self.data[0..2064]);
+                let expected = u32::from_le_bytes([
+                    self.data[2064],
+                    self.data[2065],
+                    self.data[2066],
+                    self.data[2067],
+                ]);
+
+                expected == crc
+            }
+            TrackFormat::Mode2Xa | TrackFormat::Mode2CdI => {
+                // Look for the form in the Mode2 XA/CDi subheader
+                let form = if self.data[18] & (1 << 5) == 0 {
+                    XaForm::Form1
+                } else {
+                    XaForm::Form2
+                };
+
+                match form {
+                    XaForm::Form1 => {
+                        let crc = crc32(&self.data[16..2072]);
+                        let expected = u32::from_le_bytes([
+                            self.data[2072],
+                            self.data[2073],
+                            self.data[2074],
+                            self.data[2075],
+                        ]);
+
+                        expected == crc
+                    }
+                    XaForm::Form2 => {
+                        // Form 2 has EDC but no ECC
+                        let crc = crc32(&self.data[16..2348]);
+                        let expected = u32::from_le_bytes([
+                            self.data[2348],
+                            self.data[2349],
+                            self.data[2350],
+                            self.data[2351],
+                        ]);
+
+                        expected == crc
                     }
                 }
             }
@@ -592,8 +644,9 @@ fn empty_mode_1() {
     };
 
     let q = Q::from_qdata(qdata, format);
-
     let sector = Sector::empty(q, format).unwrap();
+
+    assert!(sector.edc_valid());
 
     let data = sector.data_2352();
 
@@ -753,6 +806,8 @@ fn empty_mode_2_xa_form_1() {
     let q = Q::from_qdata(qdata, format);
 
     let sector = Sector::empty(q, format).unwrap();
+
+    assert!(sector.edc_valid());
 
     let data = sector.data_2352();
 

@@ -138,8 +138,6 @@ impl Image for Cue {
 enum CueTrackType {
     /// CD-DA audio track (red book audio)
     Audio,
-    /// CD+G (CD+Graphics) track (with subchannel data)
-    CdG,
     /// CD-ROM Mode1/2048 (only data, no header or ECC/EDC)
     Mode1Data,
     /// CD-ROM Mode1/2352
@@ -158,7 +156,6 @@ impl CueTrackType {
     fn sector_size(self) -> u16 {
         match self {
             CueTrackType::Audio => 2352,
-            CueTrackType::CdG => 2448,
             CueTrackType::Mode1Data => 2048,
             CueTrackType::Mode1Raw => 2336,
             CueTrackType::Mode2Headerless => 2336,

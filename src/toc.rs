@@ -147,9 +147,7 @@ impl Toc {
         for t in self.tracks.iter() {
             match t.format {
                 TrackFormat::Audio => (),
-                // XXX Not sure about this one
-                TrackFormat::CdG => (),
-                TrackFormat::Mode1 => (),
+                TrackFormat::Mode1 => return SessionFormat::CdDaCdRom,
                 TrackFormat::Mode2Xa => return SessionFormat::CdXa,
                 TrackFormat::Mode2CdI => return SessionFormat::Cdi,
             }

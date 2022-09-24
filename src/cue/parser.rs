@@ -223,7 +223,7 @@ impl CueParser {
 
         let t = match params[2] {
             b"AUDIO" => CueTrackType::Audio,
-            b"CDG" => CueTrackType::CdG,
+            b"CDG" => return Err(self.error_str("Unsupported CDG track format")),
             b"MODE1/2048" => CueTrackType::Mode1Data,
             b"MODE1/2352" => CueTrackType::Mode1Raw,
             b"MODE2/2336" => CueTrackType::Mode2Headerless,
@@ -237,7 +237,6 @@ impl CueParser {
         // CD-ROM Mode 2
         let f = match t {
             CueTrackType::Audio => TrackFormat::Audio,
-            CueTrackType::CdG => TrackFormat::CdG,
             CueTrackType::Mode1Data => TrackFormat::Mode1,
             CueTrackType::Mode1Raw => TrackFormat::Mode1,
             CueTrackType::Mode2Headerless => TrackFormat::Mode2Xa,
