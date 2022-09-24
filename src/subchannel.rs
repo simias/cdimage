@@ -103,6 +103,16 @@ impl Q {
     pub fn data(&self) -> &QData {
         &self.data
     }
+
+    /// Returns the value of A-MIN, A-SEC and A-FRAC
+    pub fn amsf(&self) -> Msf {
+        self.data.amsf()
+    }
+
+    /// Returns true if this sub-Q entry in is the lead-in
+    pub fn is_lead_in(&self) -> bool {
+        self.data.is_lead_in()
+    }
 }
 
 /// Possible contents of the Q subchannel data depending on the mode.
@@ -165,6 +175,34 @@ pub enum QData {
 }
 
 impl QData {
+    /// Returns true if this sub-Q entry in is the lead-in
+    pub fn is_lead_in(&self) -> bool {
+        use self::QData::*;
+
+        match *self {
+            Mode1 { track, .. } => track.bcd() == 0x00,
+            Mode1LeadOut { .. } => false,
+            Mode1Toc { .. } => true,
+            Mode1TocFirstTrack { .. } => true,
+            Mode1TocLastTrack { .. } => true,
+            Mode1TocLeadOut { .. } => true,
+        }
+    }
+
+    /// Returns the value of A-MIN, A-SEC and A-FRAC
+    pub fn amsf(&self) -> Msf {
+        use self::QData::*;
+
+        match *self {
+            Mode1 { disc_msf, .. } => disc_msf,
+            Mode1LeadOut { disc_msf, .. } => disc_msf,
+            Mode1Toc { lead_in_msf, .. } => lead_in_msf,
+            Mode1TocFirstTrack { lead_in_msf, .. } => lead_in_msf,
+            Mode1TocLastTrack { lead_in_msf, .. } => lead_in_msf,
+            Mode1TocLeadOut { lead_in_msf, .. } => lead_in_msf,
+        }
+    }
+
     /// Create a QData from raw subchannel Q data
     pub fn from_raw(raw: [u8; 12]) -> CdResult<QData> {
         let crc = crc::crc16(&raw[..10]);

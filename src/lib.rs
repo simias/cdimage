@@ -9,9 +9,10 @@ extern crate arrayref;
 extern crate thiserror;
 
 pub mod bcd;
-pub mod crc;
+mod crc;
 pub mod cue;
 pub mod disc_position;
+mod ecc;
 pub mod internal;
 pub mod msf;
 pub mod sector;

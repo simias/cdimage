@@ -312,19 +312,6 @@ pub fn crc16(data: &[u8]) -> u16 {
     })
 }
 
-//
-// void subq_generate_checksum(uint8 *buf)
-// {
-//  uint16 crc = 0;
-//
-//  for(int i = 0; i < 0xA; i++)
-//   crc = subq_crctab[(crc >> 8) ^ buf[i]] ^ (crc << 8);
-//
-//  // Checksum
-//  buf[0xa] = ~(crc >> 8);
-//  buf[0xb] = ~(crc);
-// }
-
 /// CRC16 CCITT
 const CRC16_TABLE: [u16; 0x100] = [
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7, 0x8108, 0x9129, 0xa14a, 0xb16b,

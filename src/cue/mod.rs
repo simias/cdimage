@@ -90,10 +90,8 @@ impl Image for Cue {
 
         let q = Q::from_qdata(qdata, format);
 
-        let mut sector = Sector::empty(q, format)?;
-
         // First let's read the sector data
-        match index.private() {
+        let sector = match index.private() {
             Storage::Bin(bin, offset, ty) => {
                 let bin = &mut self.bin_files[*bin as usize];
 
@@ -107,6 +105,8 @@ impl Image for Cue {
 
                 let offset = offset + index_offset;
 
+                let mut sector = Sector::uninitialized(q, format)?;
+
                 let res = sector.set_data_2352(|data| {
                     bin.file.seek(SeekFrom::Start(offset))?;
 
@@ -116,11 +116,14 @@ impl Image for Cue {
                 if let Err(e) = res {
                     return Err(CdError::IoError(e));
                 }
+
+                sector
             }
             Storage::PreGap => {
                 // We don't have data for this track, leave it empty
+                Sector::empty(q, format)?
             }
-        }
+        };
 
         Ok(sector)
     }
