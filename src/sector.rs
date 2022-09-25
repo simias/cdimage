@@ -56,11 +56,12 @@ impl Sector {
     }
 
     /// If this is a CD-ROM sector (according to the sector's format), rewrite the header (12-byte SYNC
-    /// field, 4-byte header and, for Mode2Xa tracks).
+    /// field, 4-byte header).
     ///
     /// For Mode2Xa and CDi formats the subheader won't be touched (since we can't regenerate it
     /// without additional information) with the exception of the submode byte if *both* copies are
-    /// 0 (bytes 18 and 22). In this case we set the submode to 0x8 (Data, Form 1)
+    /// 0 (bytes 18 and 22). In this case we set the submode to 0x8 (Data, Form 1) except in the
+    /// pregap (INDEX 00), lead-in and lead-out where it's set to 0x28 (Data, Form 2).
     pub fn write_headers(&mut self) {
         // Add the CD-ROM header if necessary
         if let Some(mode) = self.format.cdrom_mode() {
@@ -102,12 +103,27 @@ impl Sector {
                 && self.data[18] == 0
                 && self.data[19] == 0
             {
-                // We have invalid XA/CDi subheader submodes, set it to Data, Form 1
+                // We have invalid XA/CDi subheader submodes, set it to Data, Form 1 unless we're
+                // in the lead-in, pregap or lead-out in which case we set it to Data, Form 2.
                 //
-                // This way we'll end up with a valid header for an empty sector (pregap, ToC
-                // etc...)
-                self.data[18] = 0x08;
-                self.data[22] = 0x08;
+                // The rationale for this decision is that the CDi spec recommends that if the last track
+                // of the disc is a data track, then the lead-out should be Mode 2 Form 2. I
+                // actually didn't find any such recommendation for the pregap but I think it makes
+                // sense that it would be too.
+                //
+                // If we're within a track I set it to Mode 2 Form 1 mainly for testing purposes,
+                // in practice we probably shouldn't be generated sectors within a track, and if we
+                // had to we should probably be told what exactly to generate
+                let submode = if self.q.is_lead_in() || self.q.is_lead_out() || self.q.is_pregap() {
+                    // Data, Form 2
+                    0x28
+                } else {
+                    // Data, Form 1
+                    0x08
+                };
+
+                self.data[18] = submode;
+                self.data[22] = submode;
             }
         }
     }
@@ -747,7 +763,7 @@ fn empty_mode_2_xa_form_1() {
 
     let qdata = QData::Mode1 {
         track: Bcd::TABLE[1],
-        index: Bcd::TABLE[0],
+        index: Bcd::TABLE[1],
         track_msf: Msf::ZERO,
         disc_msf: Msf::from_bcd(0x00, 0x02, 0x03).unwrap(),
     };

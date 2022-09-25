@@ -113,6 +113,16 @@ impl Q {
     pub fn is_lead_in(&self) -> bool {
         self.data.is_lead_in()
     }
+
+    /// Returns true if this sub-Q entry in is the lead-out
+    pub fn is_lead_out(&self) -> bool {
+        self.data.is_lead_out()
+    }
+
+    /// Returns true if this sub-Q entry is in a track's pre-gap (INDEX 00)
+    pub fn is_pregap(&self) -> bool {
+        self.data.is_pregap()
+    }
 }
 
 /// Possible contents of the Q subchannel data depending on the mode.
@@ -186,6 +196,19 @@ impl QData {
             Mode1TocFirstTrack { .. } => true,
             Mode1TocLastTrack { .. } => true,
             Mode1TocLeadOut { .. } => true,
+        }
+    }
+
+    /// Returns true if this sub-Q entry in is the lead-out
+    pub fn is_lead_out(&self) -> bool {
+        matches!(self, QData::Mode1LeadOut{ .. })
+    }
+
+    /// Returns true if this sub-Q entry in in a track's pregap
+    pub fn is_pregap(&self) -> bool {
+        match *self {
+            QData::Mode1 { index, .. } => index.bcd() == 0x00,
+            _ => false
         }
     }
 
@@ -819,6 +842,10 @@ fn subq_lead_in() {
     for &raw in toc.iter() {
         let q = Q::from_raw(raw).unwrap();
         let q_generated = q.to_raw();
+
+        assert!(q.is_lead_in());
+        assert!(!q.is_lead_out());
+        assert!(!q.is_pregap());
         assert_eq!(raw, q_generated)
     }
 }
@@ -842,6 +869,11 @@ fn subq_lead_out() {
     for &raw in lead_out.iter() {
         let q = Q::from_raw(raw).unwrap();
         let q_generated = q.to_raw();
+
+        assert!(q.is_lead_out());
+        assert!(!q.is_lead_in());
+        assert!(!q.is_pregap());
+
         assert_eq!(raw, q_generated)
     }
 }

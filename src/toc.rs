@@ -119,9 +119,15 @@ impl Toc {
 
         let lead_out_msf = disc_msf - los;
 
-        // I'm not sure what the format of the lead-out should be but in practice it seems
-        // to be the same type as the last sector. It should certainly match the format of
-        // Mode1TocLeadOut in `build_toc_sector`
+        // The green book says that:
+        //
+        //   If the last track in the program area of the disc is an audio track, then it is
+        //   recommended that the lead-out area is encoded as an audio track. If the last track in
+        //   the program area of the disc is a CD-I track, then it is recommended that the lead-out
+        //   area is encoded as Mode 2 Form 2.
+        //
+        // I generalize the concept here by always setting the format of the lead-out to the format
+        // of the last track.
         let t = self.tracks.last().unwrap();
         let format = t.format;
 
