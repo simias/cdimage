@@ -201,14 +201,14 @@ impl QData {
 
     /// Returns true if this sub-Q entry in is the lead-out
     pub fn is_lead_out(&self) -> bool {
-        matches!(self, QData::Mode1LeadOut{ .. })
+        matches!(self, QData::Mode1LeadOut { .. })
     }
 
     /// Returns true if this sub-Q entry in in a track's pregap
     pub fn is_pregap(&self) -> bool {
         match *self {
             QData::Mode1 { index, .. } => index.bcd() == 0x00,
-            _ => false
+            _ => false,
         }
     }
 

@@ -178,7 +178,10 @@ impl Sector {
                         self.data[15] = tmp[3];
                     }
                     XaForm::Form2 => {
-                        // Form 2 has EDC but no ECC
+                        // Form 2 has EDC but no ECC. Technically even the EDC is optional and
+                        // could be left to all zeroes (the green book doesn't even call it EDC but
+                        // rather "reserved for quality control"), but let's write it to make
+                        // accidental corruptions easier to identify
                         let crc = crc32(&self.data[16..2348]).to_le_bytes();
                         self.data[2348] = crc[0];
                         self.data[2349] = crc[1];
@@ -237,7 +240,8 @@ impl Sector {
                             self.data[2351],
                         ]);
 
-                        expected == crc
+                        // The CRC is optional and is set to zero if not used
+                        expected == crc || expected == 0
                     }
                 }
             }
