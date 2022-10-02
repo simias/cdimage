@@ -609,37 +609,19 @@ impl BinSource {
                 f.read_exact(buf)?;
             }
             (BinSource::Zip { zip, .. }, BinaryBlob::ZipFile { zip_index, buffer }) => {
-                buffer.seek(seek)?;
+                {
+                    let v = buffer.get_mut();
 
-                match buffer.read_exact(buf) {
-                    Ok(_) => (),
-                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                        // We're at the end of the buffer, we need to read some more
+                    if v.is_empty() {
+                        // Decompress this file
                         let mut f = zip.by_index(*zip_index)?;
 
-                        // Attempt to read up to 1MB past the new pos
-                        let read_len = (buffer.position() as usize) + 1024 * 1024;
-
-                        {
-                            let v = buffer.get_mut();
-
-                            let cur_len = v.len();
-                            let mut new_len = cur_len + read_len;
-
-                            if new_len > f.size() as usize {
-                                new_len = f.size() as usize;
-                            }
-
-                            v.resize(new_len, 0);
-
-                            f.read_exact(&mut v[cur_len..])?;
-                        }
-
-                        // Now that we've read more data attempt the read again
-                        buffer.read_exact(buf)?;
+                        f.read_to_end(v)?;
                     }
-                    e => e?,
                 }
+
+                buffer.seek(seek)?;
+                buffer.read_exact(buf)?;
             }
             _ => unreachable!("Invalid BinarySource/BinaryBlob configuration"),
         }
@@ -657,8 +639,7 @@ pub enum BinaryBlob {
     ZipFile {
         /// The index in the ZIP archive
         zip_index: usize,
-        /// The contents that have already been decompressed (since we can't freely seek in ZIP
-        /// files)
+        /// The contents are decompressed when the blob is first accessed
         buffer: io::Cursor<Vec<u8>>,
     },
 }
