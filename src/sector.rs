@@ -253,30 +253,19 @@ impl Sector {
         &self.q
     }
 
-    /// Retreive the entire sector data (except for the subchannel data).
+    /// Retrieve the entire sector data (except for the subchannel data).
     pub fn data_2352(&self) -> &[u8; 2352] {
         &self.data
+    }
+
+    /// Retrieve a mutable reference to the entire sector data (except for the subchannel data).
+    pub fn data_2352_mut(&mut self) -> &mut [u8; 2352] {
+        &mut self.data
     }
 
     /// Return the format of the track this sector belongs to
     pub fn format(&self) -> TrackFormat {
         self.format
-    }
-
-    /// Load up the full 2352 bytes of sector data. The `loader` function will be called with a
-    /// mutable reference to the sector data. If the `loader` callback returns an error the sector
-    /// data won't be tagged as valid.
-    pub fn set_data_2352<F, E>(&mut self, loader: F) -> Result<(), E>
-    where
-        F: FnOnce(&mut [u8; 2352]) -> Result<(), E>,
-    {
-        // The reason we do it this way instead of just returning a mutable reference to the data
-        // is to keep track of what parts of the sector data have been initialized, this way we'll
-        // be able to add support for partial sector data later if we want (for instance to store
-        // data sectors without ECC).
-        loader(&mut self.data)?;
-
-        Ok(())
     }
 
     /// Returns the raw 16bit CD-ROM header for this sector. Returns an error if this is not a

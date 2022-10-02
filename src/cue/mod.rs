@@ -7,16 +7,15 @@
 //!
 //! The CUE file format does not support multi-session discs
 
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::path::Path;
 
 use internal::IndexCache;
 use sector::Sector;
 use subchannel::{QData, Q};
-use {CdError, CdResult, DiscPosition, Image, Toc};
+use {CdResult, DiscPosition, Image, Toc};
 
-use self::parser::CueParser;
+use self::parser::{BinSource, BinaryBlob, CueParser};
 
 mod parser;
 
@@ -24,6 +23,7 @@ mod parser;
 pub struct Cue {
     /// Cache of all the indices in the CD image
     indices: IndexCache<Storage>,
+    bin_source: BinSource,
     /// List of all the BIN files referenced in the cue sheet
     bin_files: Vec<BinaryBlob>,
     /// Table of contents
@@ -33,8 +33,18 @@ pub struct Cue {
 impl Cue {
     /// Parse a CUE sheet, open the BIN files and build a `Cue`
     /// instance.
-    pub fn new(cue_path: &Path) -> CdResult<Cue> {
+    pub fn new<P: AsRef<Path>>(cue_path: P) -> CdResult<Cue> {
         CueParser::build_cue(cue_path)
+    }
+
+    /// Attempt to load a disc image from a ZIP file.
+    ///
+    /// The parser will look for a file with a `.cue` extension in the archive and load it. All the
+    /// referenced `.bin` files will be loaded from the archive lazily.
+    ///
+    /// If the archive contains several `.cue` files, only the first one will be loaded.
+    pub fn new_from_zip<P: AsRef<Path>>(zip_path: P) -> CdResult<Cue> {
+        CueParser::build_cue_from_zip(zip_path)
     }
 }
 
@@ -107,15 +117,11 @@ impl Image for Cue {
 
                 let mut sector = Sector::uninitialized(q, format)?;
 
-                let res = sector.set_data_2352(|data| {
-                    bin.file.seek(SeekFrom::Start(offset))?;
-
-                    bin.file.read_exact(data)
-                });
-
-                if let Err(e) = res {
-                    return Err(CdError::IoError(e));
-                }
+                self.bin_source.read_exact_from(
+                    bin,
+                    SeekFrom::Start(offset),
+                    sector.data_2352_mut(),
+                )?;
 
                 sector
             }
@@ -176,26 +182,6 @@ enum Storage {
     PreGap,
 }
 
-/// `BinaryBlob` can contain one or several slices interrupted by pre-
-/// and post-gaps.
-#[derive(Debug)]
-struct BinaryBlob {
-    /// BIN file
-    file: File,
-}
-
-impl BinaryBlob {
-    fn new(path: &Path) -> CdResult<BinaryBlob> {
-        let file = match File::open(path) {
-            Ok(f) => f,
-            Err(e) => return Err(CdError::IoError(e)),
-        };
-
-        Ok(BinaryBlob { file })
-    }
-}
-
-/// Max size for a cue sheet, used to detect bogus input early without
-/// attempting to load a huge file to RAM. Cue sheets bigger than this
-/// will be rejected.
+/// Max size for a cue sheet, used to detect bogus input early without attempting to load a huge
+/// file to RAM. Cue sheets bigger than this will be rejected.
 pub const CUE_SHEET_MAX_LENGTH: u64 = 1024 * 1024;

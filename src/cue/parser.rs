@@ -1,22 +1,26 @@
+use super::{Cue, CueTrackType, Storage, CUE_SHEET_MAX_LENGTH};
+use bcd::Bcd;
+use internal::{Index, IndexCache};
+use msf::Msf;
 use std::fs::{metadata, File};
 use std::io;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-
-use internal::{Index, IndexCache};
+use zip::ZipArchive;
 use CdError;
 use CdResult;
 use TrackFormat;
 
-use bcd::Bcd;
-use msf::Msf;
-
-use super::{BinaryBlob, Cue, CueTrackType, Storage, CUE_SHEET_MAX_LENGTH};
-
 pub struct CueParser {
     /// Path to the cue sheet
+    ///
+    /// This may not be an valid path on the filesystem, for instance referencing archive formats.
+    /// It's used for better error reporting. `bin_source` should be used to figure out where the
+    /// cue file is located
     cue_path: PathBuf,
+    /// The place where bin files should be loaded from
+    bin_source: BinSource,
     /// Position within the buffer
     pos: usize,
     /// Current line in the buffer
@@ -43,14 +47,29 @@ pub struct CueParser {
 impl CueParser {
     /// Parse a CUE sheet, open the BIN files and generate the CD
     /// structure
-    pub fn build_cue(cue_path: &Path) -> CdResult<Cue> {
+    pub fn build_cue<P: AsRef<Path>>(cue_path: P) -> CdResult<Cue> {
+        let cue_path = cue_path.as_ref();
         let cue_sheet = match read_file(cue_path, CUE_SHEET_MAX_LENGTH) {
             Ok(c) => c,
             Err(e) => return Err(CdError::IoError(e)),
         };
 
+        let cue_path = PathBuf::from(cue_path);
+        let dir = match cue_path.parent() {
+            Some(p) => p.to_path_buf(),
+            // Probably shouldn't happen
+            None => cue_path.clone(),
+        };
+
+        let bin_source = BinSource::Fs(dir);
+
+        CueParser::do_parse(cue_path, bin_source, &cue_sheet)
+    }
+
+    fn do_parse(cue_path: PathBuf, bin_source: BinSource, cue_sheet: &[u8]) -> CdResult<Cue> {
         let mut parser = CueParser {
-            cue_path: PathBuf::from(cue_path),
+            cue_path,
+            bin_source,
             pos: 0,
             line: 0,
             // CUE always skips track 01's pregap (and assumes it's 2
@@ -65,15 +84,71 @@ impl CueParser {
             indices: Vec::new(),
         };
 
-        parser.parse(&cue_sheet)?;
+        parser.parse(cue_sheet)?;
 
         let indices = IndexCache::new(parser.cue_path, parser.indices, parser.msf)?;
         let toc = indices.toc()?;
 
         Ok(Cue {
             indices,
+            bin_source: parser.bin_source,
             bin_files: parser.bin_files,
             toc,
+        })
+    }
+
+    pub fn build_cue_from_zip<P: AsRef<Path>>(zip_path: P) -> CdResult<Cue> {
+        let zip_path = zip_path.as_ref();
+        let archive = File::open(zip_path)?;
+        let mut zip = ZipArchive::new(archive)?;
+
+        for i in 0..zip.len() {
+            let mut f = match zip.by_index(i) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+
+            // Technically since we're not extracting anything we could use f.name() directly
+            // without danger, but we may as well reject wonky archives
+            let p = match f.enclosed_name() {
+                Some(p) => p,
+                None => continue,
+            };
+
+            if !matches!(
+                p.extension().and_then(|ext| ext.to_str()),
+                Some("cue") | Some("CUE")
+            ) {
+                continue;
+            }
+
+            let mut cue_path = zip_path.to_path_buf();
+            cue_path.push(p);
+
+            if f.size() > CUE_SHEET_MAX_LENGTH {
+                return Err(CdError::BadImage {
+                    path: cue_path,
+                    desc: "CUE sheet is too big".to_string(),
+                });
+            }
+
+            let mut cue_sheet = Vec::with_capacity(f.size() as usize);
+
+            f.read_to_end(&mut cue_sheet)?;
+
+            drop(f);
+
+            let bin_source = BinSource::Zip {
+                zip,
+                path: zip_path.to_path_buf(),
+            };
+
+            return CueParser::do_parse(cue_path, bin_source, &cue_sheet);
+        }
+
+        Err(CdError::BadImage {
+            path: zip_path.to_path_buf(),
+            desc: "No CUE file found in archive".to_string(),
         })
     }
 
@@ -169,22 +244,6 @@ impl CueParser {
             bin_name = &bin_name[1..];
         }
 
-        // A new binary blob is introduced
-        let mut bin_path = PathBuf::new();
-
-        if let Some(parent) = self.cue_path.parent() {
-            bin_path.push(parent);
-        }
-
-        match build_path(bin_name) {
-            // If bin_name is an absolute Path it'll replace the
-            // parent completely bin_path (see the doc for PathBuf)
-            Some(p) => bin_path.push(p),
-            None => {
-                return Err(self.error_str("Invalid BIN path in cuesheet"));
-            }
-        }
-
         if bin_type != b"BINARY" {
             let ty = String::from_utf8_lossy(bin_type);
 
@@ -193,15 +252,16 @@ impl CueParser {
             return Err(self.error(error));
         }
 
-        let size = match metadata(&bin_path) {
-            Ok(m) => m.len(),
-            Err(e) => return Err(CdError::IoError(e)),
-        };
+        // A new binary blob is introduced
+        let (blob, size) = match self.bin_source {
+            BinSource::Fs(ref root) => {
+                // Open the new BIN blob
+                BinaryBlob::from_file(root.clone(), bin_name)
+            }
+            BinSource::Zip { ref mut zip, .. } => BinaryBlob::from_zip_file(zip, bin_name),
+        }?;
 
-        // Open the new BIN blob
-        let bin = BinaryBlob::new(&bin_path)?;
-
-        self.bin_files.push(bin);
+        self.bin_files.push(blob);
         self.bin_len = size;
         self.consumed_bytes = 0;
         self.index_msf = Msf::ZERO;
@@ -449,7 +509,8 @@ impl CueParser {
     }
 }
 
-fn read_file(cue: &Path, max_len: u64) -> Result<Vec<u8>, io::Error> {
+fn read_file<P: AsRef<Path>>(cue: P, max_len: u64) -> Result<Vec<u8>, io::Error> {
+    let cue = cue.as_ref();
     let md = metadata(cue)?;
 
     let len = md.len();
@@ -462,9 +523,6 @@ fn read_file(cue: &Path, max_len: u64) -> Result<Vec<u8>, io::Error> {
     }
 
     let mut file = File::open(cue)?;
-
-    // Pre-allocate the vector since read_to_end uses the vector's
-    // length (and not its capacity) as the base size for reading.
     let mut cue_sheet = Vec::with_capacity(len as usize);
 
     file.read_to_end(&mut cue_sheet)?;
@@ -526,4 +584,134 @@ pub fn build_path(bytes: &[u8]) -> Option<PathBuf> {
     };
 
     Some(PathBuf::from(s))
+}
+
+/// Possible sources for BIN files
+pub enum BinSource {
+    Fs(PathBuf),
+    Zip {
+        zip: ZipArchive<File>,
+        path: PathBuf,
+    },
+}
+
+impl BinSource {
+    pub fn read_exact_from(
+        &mut self,
+        blob: &mut BinaryBlob,
+        seek: SeekFrom,
+        buf: &mut [u8],
+    ) -> CdResult<()> {
+        match (self, blob) {
+            (BinSource::Fs(_path), BinaryBlob::File(f)) => {
+                f.seek(seek)?;
+
+                f.read_exact(buf)?;
+            }
+            (BinSource::Zip { zip, .. }, BinaryBlob::ZipFile { zip_index, buffer }) => {
+                buffer.seek(seek)?;
+
+                match buffer.read_exact(buf) {
+                    Ok(_) => (),
+                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                        // We're at the end of the buffer, we need to read some more
+                        let mut f = zip.by_index(*zip_index)?;
+
+                        // Attempt to read up to 1MB past the new pos
+                        let read_len = (buffer.position() as usize) + 1024 * 1024;
+
+                        {
+                            let v = buffer.get_mut();
+
+                            let cur_len = v.len();
+                            let mut new_len = cur_len + read_len;
+
+                            if new_len > f.size() as usize {
+                                new_len = f.size() as usize;
+                            }
+
+                            v.resize(new_len, 0);
+
+                            f.read_exact(&mut v[cur_len..])?;
+                        }
+
+                        // Now that we've read more data attempt the read again
+                        buffer.read_exact(buf)?;
+                    }
+                    e => e?,
+                }
+            }
+            _ => unreachable!("Invalid BinarySource/BinaryBlob configuration"),
+        }
+
+        Ok(())
+    }
+}
+
+/// `BinaryBlob` can contain one or several slices interrupted by pre- and post-gaps.
+#[derive(Debug)]
+pub enum BinaryBlob {
+    /// The blob is contained in a File
+    File(File),
+    /// The blob is contained in a ZIP file, referenced by its index.
+    ZipFile {
+        /// The index in the ZIP archive
+        zip_index: usize,
+        /// The contents that have already been decompressed (since we can't freely seek in ZIP
+        /// files)
+        buffer: io::Cursor<Vec<u8>>,
+    },
+}
+
+impl BinaryBlob {
+    fn from_file(mut bin_path: PathBuf, bin_name: &[u8]) -> io::Result<(BinaryBlob, u64)> {
+        match build_path(bin_name) {
+            // If bin_name is an absolute Path it'll replace the
+            // parent completely bin_path (see the doc for PathBuf)
+            Some(p) => bin_path.push(p),
+            None => {
+                // XXX Use `InvalidFilename` when stabilized
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "Invalid BIN path in cuesheet: `{}`",
+                        String::from_utf8_lossy(bin_name)
+                    ),
+                ));
+            }
+        }
+
+        let file = File::open(&bin_path)?;
+
+        let size = metadata(&bin_path)?.len();
+
+        Ok((BinaryBlob::File(file), size))
+    }
+
+    fn from_zip_file(zip: &mut ZipArchive<File>, name: &[u8]) -> io::Result<(BinaryBlob, u64)> {
+        for i in 0..zip.len() {
+            let f = match zip.by_index(i) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+
+            if f.name_raw() == name {
+                let size = f.size();
+                let blob = BinaryBlob::ZipFile {
+                    zip_index: i,
+                    buffer: io::Cursor::new(Vec::new()),
+                };
+
+                return Ok((blob, size));
+            }
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "Couldn't find `{}` in ZIP file",
+                String::from_utf8_lossy(name)
+            ),
+        ))
+    }
 }

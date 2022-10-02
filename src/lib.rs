@@ -7,6 +7,7 @@
 #[macro_use]
 extern crate arrayref;
 extern crate thiserror;
+extern crate zip;
 
 pub mod bcd;
 mod crc;
@@ -133,7 +134,7 @@ impl TrackFormat {
 #[allow(missing_docs)]
 #[derive(Error, Debug)]
 pub enum CdError {
-    #[error("Generic I/O error")]
+    #[error("I/O error: {0}")]
     IoError(#[from] io::Error),
     #[error(
         "Format missmatch. \
@@ -174,6 +175,8 @@ pub enum CdError {
     PreLeadInPosition,
     #[error("Couldn't handle disc position that's outside of the disc")]
     OutOfDiscPosition,
+    #[error("ZIP format error: {0}")]
+    ZipError(#[from] zip::result::ZipError),
 }
 
 /// Convenience type alias for a `Result<R, CdError>`

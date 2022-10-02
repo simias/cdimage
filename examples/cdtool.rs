@@ -9,29 +9,35 @@ use cdimage::Image;
 fn main() {
     let argv: Vec<_> = std::env::args().collect();
 
-    if argv.len() < 3 {
-        panic!("Usage: cdtool <cd-image> <msf>");
+    if argv.len() < 2 {
+        panic!("Usage: cdtool <cd-image> [msf]");
     }
 
-    let file = &argv[1];
-    let msf = &argv[2];
+    let file = Path::new(&argv[1]);
 
-    let msf = Msf::from_str(msf).unwrap();
+    let img = if file.extension().and_then(|ext| ext.to_str()) == Some("cue") {
+        cdimage::cue::Cue::new(file)
+    } else {
+        cdimage::cue::Cue::new_from_zip(file)
+    };
 
-    match cdimage::cue::Cue::new(Path::new(file)) {
-        Ok(mut c) => {
-            println!("{:?}", c.toc());
-            let sector = c.read_sector(msf.to_disc_position()).unwrap();
+    let mut img = img.unwrap_or_else(|e| panic!("Cue error: {}", e));
 
-            if let Ok(xa_subheader) = sector.mode2_xa_subheader() {
-                println!("XA Mode 2 form: {:?}", xa_subheader.submode().form());
-            }
+    println!("{:?}", img.toc());
 
-            let bytes = sector.data_2352();
+    if argv.len() >= 3 {
+        let msf = &argv[2];
+        let msf = Msf::from_str(msf).unwrap();
 
-            hexdump(bytes);
+        let sector = img.read_sector(msf.to_disc_position()).unwrap();
+
+        if let Ok(xa_subheader) = sector.mode2_xa_subheader() {
+            println!("XA Mode 2 form: {:?}", xa_subheader.submode().form());
         }
-        Err(e) => println!("Cue error: {}", e),
+
+        let bytes = sector.data_2352();
+
+        hexdump(bytes);
     }
 }
 
