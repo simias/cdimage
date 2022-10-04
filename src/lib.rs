@@ -6,6 +6,10 @@
 
 #[macro_use]
 extern crate arrayref;
+#[cfg(feature = "serde")]
+extern crate serde;
+#[cfg(feature = "serde")]
+extern crate serde_big_array;
 extern crate thiserror;
 extern crate zip;
 
@@ -45,6 +49,7 @@ pub trait Image {
 }
 
 /// Struct representing a track's attributes
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone)]
 pub struct Track {
     /// Track number
@@ -80,6 +85,7 @@ impl Track {
 }
 
 /// Possible session formats.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum SessionFormat {
     /// CD-DA (audio CD, "red book" specification) or CD-ROM ("yellow
@@ -94,6 +100,7 @@ pub enum SessionFormat {
 }
 
 /// Possible track types
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum TrackFormat {
     /// CD-DA audio track (red book audio)

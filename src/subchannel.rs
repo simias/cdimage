@@ -37,6 +37,7 @@ use {crc, CdError, CdResult, SessionFormat, TrackFormat};
 
 /// Full contents of a Q subchannel frame, parsed. From this structure we should be able to
 /// regenerate the raw Subchannel Q data losslessly
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Q {
     /// Decoded payload
@@ -128,6 +129,7 @@ impl Q {
 /// Possible contents of the Q subchannel data depending on the mode.
 ///
 /// See section 22.3.2 of ECMA-130 for more details.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QData {
     /// Mode 1 data in the user data area
@@ -499,6 +501,7 @@ impl QData {
 }
 
 /// The first byte of subchannel Q data, containing the mode and various attributes
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct AdrControl(u8);
 

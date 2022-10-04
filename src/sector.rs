@@ -8,9 +8,11 @@ use {CdError, CdResult, TrackFormat};
 
 /// Structure containing a single sector. For better peformance it tries to be as lazy as possible
 /// and regenerate missing sector data only if it's requested.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone)]
 pub struct Sector {
     /// Actual sector data, only the portions set in `ready` are currently valid.
+    #[cfg_attr(feature = "serde", serde(with = "serde_big_array::BigArray"))]
     data: [u8; 2352],
     /// Q subchannel data for this sector
     q: Q,

@@ -14,6 +14,7 @@ use {CdError, DiscPosition};
 /// CD "minute:second:frame" timestamp, given as triplet of *BCD*
 /// encoded bytes. In this context "frame" is synonymous with
 /// "sector".
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Msf(Bcd, Bcd, Bcd);
 
