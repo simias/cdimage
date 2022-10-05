@@ -11,6 +11,7 @@ use {CdError, CdResult, Msf};
 /// An enum that can describe any position on the disc, be it in the lead-in, program data or
 /// lead-out
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DiscPosition {
     /// Position within the lead-in. When the MSF reaches 99:59:74 we continue in the program area.
     ///
