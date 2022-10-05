@@ -349,6 +349,7 @@ impl Sector {
 }
 
 /// Decoded CD-ROM sector header
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct CdRomHeader {
     /// Sector MSF (normally should match the one in the metadata, although if the CD is improperly
@@ -359,6 +360,7 @@ pub struct CdRomHeader {
 }
 
 /// Mode for a CD-ROM sector
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum CdRomMode {
     /// All bytes in positions 16 to 2351 of the sector are set to 0. No CRC/ECC.
@@ -382,6 +384,7 @@ pub enum CdRomMode {
 ///
 /// The subheader starts at byte 16 of CD-ROM XA sectors, just after the CD-ROM header.
 /// The data is copied twice for data integrity but both copies should be identical
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct XaSubHeader([u8; 8]);
 
 impl XaSubHeader {
@@ -416,6 +419,7 @@ impl XaSubHeader {
 }
 
 /// Possible interpretations of the XA sub-header Coding Information
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum XaCodingInfo {
     /// Video coding info
@@ -427,10 +431,12 @@ pub enum XaCodingInfo {
 }
 
 /// Video Coding Information byte from an XA sub-header
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct XaCodingVideo(pub u8);
 
 /// Audio Coding Information byte from an XA sub-header
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct XaCodingAudio(pub u8);
 
@@ -474,6 +480,7 @@ impl XaCodingAudio {
 }
 
 /// Possible values for the sampling frequency of an audio XA sector
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum XaSamplingFreq {
     /// 37.8 kHz
     F37_8 = 37_800,
@@ -482,6 +489,7 @@ pub enum XaSamplingFreq {
 }
 
 /// Possible values for the number of bits per sample of an audio XA sector
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum XaBitsPerSample {
     /// 4 bits per sample
     S4Bits = 4,
@@ -490,6 +498,7 @@ pub enum XaBitsPerSample {
 }
 
 /// The Submode byte in a Mode 2 XA sub-header (byte 6)
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct XaSubmode(pub u8);
 
@@ -542,6 +551,7 @@ impl XaSubmode {
 }
 
 /// CD-ROM XA Mode 2 sectors have two possible forms (advertised in the subheader)
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum XaForm {
     /// Mode 2 Form 1: 2048 bytes of data, 4 bytes of error detection and 276 bytes of error
