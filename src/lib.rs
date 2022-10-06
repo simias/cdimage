@@ -50,7 +50,7 @@ pub trait Image {
 
 /// Struct representing a track's attributes
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Track {
     /// Track number
     pub track: Bcd,

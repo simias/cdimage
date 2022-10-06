@@ -3,7 +3,8 @@ use subchannel::{QData, Q};
 use {Bcd, CdError, CdResult, Msf, Sector, SessionFormat, Track, TrackFormat};
 
 /// Table of contents
-#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Toc {
     /// Track list
     tracks: Vec<Track>,
