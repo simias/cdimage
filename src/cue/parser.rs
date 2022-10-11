@@ -7,6 +7,7 @@ use std::io;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use subchannel::AdrControl;
 use zip::ZipArchive;
 use CdError;
 use CdResult;
@@ -38,8 +39,8 @@ pub struct CueParser {
     index_msf: Msf,
     /// Type of the last generated index
     index_type: Option<CueTrackType>,
-    /// Current Track: track no, type and list of indices
-    track: Option<(Bcd, CueTrackType, TrackFormat)>,
+    /// Current Track
+    track: Option<(Bcd, CueTrackType, TrackFormat, AdrControl)>,
     /// Indices
     indices: Vec<Index<Storage>>,
 }
@@ -180,12 +181,13 @@ impl CueParser {
 
             type Callback = fn(&mut CueParser, &[&[u8]]) -> CdResult<()>;
 
-            let handlers: [(&'static [u8], Callback, Option<u32>); 5] = [
+            let handlers: [(&'static [u8], Callback, Option<u32>); 6] = [
                 (b"REM", CueParser::command_rem, None),
                 (b"FILE", CueParser::command_file, Some(2)),
                 (b"TRACK", CueParser::command_track, Some(2)),
                 (b"PREGAP", CueParser::command_pregap, Some(1)),
                 (b"INDEX", CueParser::command_index, Some(2)),
+                (b"FLAGS", CueParser::command_flags, None),
             ];
 
             let callback = handlers.iter().find(|&&(name, _, _)| name == command);
@@ -305,14 +307,13 @@ impl CueParser {
             CueTrackType::CdIRaw => TrackFormat::Mode2CdI,
         };
 
-        self.track = Some((n, t, f));
+        let ctrl = if f.is_audio() {
+            AdrControl::AUDIO
+        } else {
+            AdrControl::DATA
+        };
 
-        if n.binary() == 1 {
-            // CUE always ignores track 1's pregap, let's add it in here
-            let pregap = Index::new(Bcd::ZERO, Msf::ZERO, n, f, 0, Storage::PreGap);
-
-            self.indices.push(pregap);
-        }
+        self.track = Some((n, t, f, ctrl));
 
         Ok(())
     }
@@ -321,7 +322,7 @@ impl CueParser {
     ///
     /// There can be only one PREGAP per track and it must appear before any INDEX
     fn command_pregap(&mut self, params: &[&[u8]]) -> CdResult<()> {
-        let (track_number, _track_type, track_format) = match self.track {
+        let (track_number, _track_type, track_format, ctrl) = match self.track {
             Some(t) => t,
             None => return Err(self.error_str("Track-less pregap")),
         };
@@ -339,6 +340,7 @@ impl CueParser {
             track_number,
             track_format,
             0,
+            ctrl,
             Storage::PreGap,
         );
         self.indices.push(pregap);
@@ -353,7 +355,7 @@ impl CueParser {
 
     /// INDEX bcd mm:ss:ff
     fn command_index(&mut self, params: &[&[u8]]) -> CdResult<()> {
-        let (track_number, track_type, track_format) = match self.track {
+        let (track_number, track_type, track_format, ctrl) = match self.track {
             Some(t) => t,
             None => return Err(self.error_str("Track-less index")),
         };
@@ -367,6 +369,21 @@ impl CueParser {
             Ok(b) => b,
             Err(_) => return Err(self.error_str("Invalid index MSF")),
         };
+
+        if track_number.binary() == 1 {
+            // CUE always ignores track 1's pregap, let's add it in here
+            let pregap = Index::new(
+                Bcd::ZERO,
+                Msf::ZERO,
+                track_number,
+                track_format,
+                0,
+                ctrl,
+                Storage::PreGap,
+            );
+
+            self.indices.push(pregap);
+        }
 
         self.consume_bin_sectors(msf)?;
 
@@ -383,11 +400,35 @@ impl CueParser {
             track_number,
             track_format,
             0,
+            ctrl,
             Storage::Bin(bin_index, self.consumed_bytes, track_type),
         );
 
         self.indices.push(index);
         self.index_type = Some(track_type);
+
+        Ok(())
+    }
+
+    /// FLAGS flag [flag [...]]
+    fn command_flags(&mut self, params: &[&[u8]]) -> CdResult<()> {
+        let (_track_number, _track_type, _track_format, ref mut ctrl) = match self.track {
+            Some(t) => t,
+            None => return Err(self.error_str("Track-less flag")),
+        };
+
+        if params.len() < 2 {
+            return Err(self.error_str("Empty FLAGS command"));
+        }
+
+        for &flag in params.iter().skip(1) {
+            match flag {
+                b"DCP" => ctrl.set_digital_copy_permited(true),
+                b"4CH" => ctrl.set_four_channel_audio(true),
+                b"PRE" => ctrl.set_pre_emphasis(true),
+                _ => return Err(self.error_str("Unknown flag")),
+            }
+        }
 
         Ok(())
     }

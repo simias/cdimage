@@ -33,7 +33,7 @@
 use bcd::Bcd;
 use msf::Msf;
 
-use {crc, CdError, CdResult, SessionFormat, TrackFormat};
+use {crc, CdError, CdResult, SessionFormat};
 
 /// Full contents of a Q subchannel frame, parsed. From this structure we should be able to
 /// regenerate the raw Subchannel Q data losslessly
@@ -47,15 +47,13 @@ pub struct Q {
 }
 
 impl Q {
-    /// Generate a Q from the given QData and track format
-    pub fn from_qdata(data: QData, format: TrackFormat) -> Q {
-        let adr_control = if format.is_audio() {
-            AdrControl::MODE1_AUDIO
-        } else {
-            AdrControl::MODE1_DATA
-        };
-
-        Q { data, adr_control }
+    /// Generate a Q from the given QData and control value
+    pub fn from_qdata_mode1(data: QData, mut ctrl: AdrControl) -> Q {
+        ctrl.set_mode(1);
+        Q {
+            data,
+            adr_control: ctrl,
+        }
     }
 
     /// Generate a Q from raw subchannel Q data
@@ -512,51 +510,84 @@ impl AdrControl {
     /// A Mode1 data AdrControl with no other attribute set
     pub const MODE1_DATA: AdrControl = AdrControl(0x41);
 
-    /// Return true if this is a data track. For table of content
-    /// sectors this flag applies to the target track.
+    /// A Mode-less data AdrControl with no other attribute set
+    pub const DATA: AdrControl = AdrControl(0x40);
+
+    /// A Mode-less audio AdrControl with no other attribute set
+    pub const AUDIO: AdrControl = AdrControl(0x00);
+
+    /// Return true if this is a data track. For table of content sectors this flag applies to the
+    /// target track.
     pub fn is_data(&self) -> bool {
         self.0 & 0x40 != 0
     }
 
-    /// Return true if this is an audio track. For table of content
-    /// sectors this flag applies to the target track.
+    /// Return true if this is an audio track. For table of content sectors this flag applies to
+    /// the target track.
     pub fn is_audio(&self) -> bool {
         !self.is_data()
     }
 
-    /// Return true if the "digital copy permitted" flag is set. For
-    /// table of content sectors this flag applies to the target
-    /// track.
-    pub fn is_digital_copy_permitted(&self) -> bool {
+    /// Return true if the "digital copy permitted" flag is set. For table of content sectors this
+    /// flag applies to the target track.
+    pub fn digital_copy_permitted(&self) -> bool {
         self.0 & 0x20 != 0
     }
 
-    /// Return true if this is an audio track and pre-emphasis is
-    /// enabled.
+    /// Set the value of the "digital copy permitted" control bit
+    pub fn set_digital_copy_permited(&mut self, set: bool) {
+        if set {
+            self.0 |= 0x20
+        } else {
+            self.0 &= !0x20
+        }
+    }
+    /// Return true if pre-emphasis is enabled.
     ///
     /// For more informations on pre-emphasis check out
     /// http://wiki.hydrogenaud.io/index.php?title=Pre-emphasis
     pub fn pre_emphasis(&self) -> bool {
-        self.is_audio() && (self.0 & 0x10 != 0)
+        self.0 & 0x10 != 0
     }
 
-    /// Return true if this is a 4-channel audio track. The vast
-    /// majority of audio CDs are 2-channel (stereo).
+    /// Set the value of the pre-emphasis audio control bit
+    pub fn set_pre_emphasis(&mut self, set: bool) {
+        if set {
+            self.0 |= 0x10
+        } else {
+            self.0 &= !0x10
+        }
+    }
+
+    /// Return true if this is a 4-channel audio track. The vast majority of audio CDs are
+    /// 2-channel (stereo).
     pub fn four_channel_audio(&self) -> bool {
-        self.is_audio() && (self.0 & 0x80 != 0)
+        self.0 & 0x80 != 0
     }
 
-    /// Retrieve the mode of the data specified by this
-    /// Q-subchannel.
+    /// Set the value of the four-channel audio control bit
+    pub fn set_four_channel_audio(&mut self, set: bool) {
+        if set {
+            self.0 |= 0x80
+        } else {
+            self.0 &= !0x80
+        }
+    }
+
+    /// Retrieve the mode of the data specified by this Q-subchannel.
     ///
-    /// The Q subchannel has several modes (see section 5.4.3 of
-    /// ECMA-395). Mode 1 is used to store the table of content in the
-    /// lead-in and timing information elsewhere.
+    /// The Q subchannel has several modes (see section 5.4.3 of ECMA-395). Mode 1 is used to store
+    /// the table of content in the lead-in and timing information elsewhere.
     ///
-    /// This field is specified over 4 bits so theoretically 16
-    /// different modes are possible.
+    /// This field is specified over 4 bits so theoretically 16 different modes are possible.
     pub fn mode(&self) -> u8 {
         self.0 & 0xf
+    }
+
+    /// Set the 4 mode bits (the high 4 bits of `mode` are ignored)
+    pub fn set_mode(&mut self, mode: u8) {
+        self.0 &= 0xf0;
+        self.0 |= mode & 0xf;
     }
 }
 

@@ -60,6 +60,9 @@ pub struct Track {
     pub start: Msf,
     /// Length of the track
     pub length: Msf,
+    /// Value of the control bits for this track (upper 4 bits of the first byte of SUBQ data,
+    /// containing pre-emphasis, audio/data flag, digital copy flag and 4-channel audio flag)
+    pub control: subchannel::AdrControl,
 }
 
 impl Track {

@@ -664,7 +664,7 @@ fn empty_mode_1() {
         disc_msf: Msf::from_bcd(0x00, 0x02, 0x14).unwrap(),
     };
 
-    let q = Q::from_qdata(qdata, format);
+    let q = Q::from_qdata_mode1(qdata, ::subchannel::AdrControl::DATA);
     let sector = Sector::empty(q, format).unwrap();
 
     assert!(sector.edc_valid());
@@ -773,7 +773,7 @@ fn empty_mode_2_xa_form_1() {
         disc_msf: Msf::from_bcd(0x00, 0x02, 0x03).unwrap(),
     };
 
-    let q = Q::from_qdata(qdata, format);
+    let q = Q::from_qdata_mode1(qdata, ::subchannel::AdrControl::DATA);
 
     let sector = Sector::empty(q, format).unwrap();
 

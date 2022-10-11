@@ -6,7 +6,7 @@
 use std::cmp;
 use std::fmt;
 use std::path::PathBuf;
-
+use subchannel::AdrControl;
 use {Bcd, CdError, CdResult, Msf, Toc, Track, TrackFormat};
 
 /// A generic CD index implementation. Each image format can specialize it by adding its own
@@ -22,6 +22,8 @@ pub struct Index<T> {
     format: TrackFormat,
     /// Session number this index belongs to
     session: u8,
+    /// Control bits for the current track
+    control: AdrControl,
     /// Generic private data associated with this index
     private: T,
 }
@@ -34,6 +36,7 @@ impl<T> Index<T> {
         track: Bcd,
         format: TrackFormat,
         session: u8,
+        control: AdrControl,
         private: T,
     ) -> Index<T> {
         Index {
@@ -42,6 +45,7 @@ impl<T> Index<T> {
             track,
             format,
             session,
+            control,
             private,
         }
     }
@@ -65,6 +69,11 @@ impl<T> Index<T> {
     /// Retrieve a mutable reference to the `private` data
     pub fn private_mut(&mut self) -> &mut T {
         &mut self.private
+    }
+
+    /// Retrieve the value of the control bits
+    pub fn control(&self) -> AdrControl {
+        self.control
     }
 
     /// Retrieve the index number in BCD
@@ -275,6 +284,7 @@ impl<T> IndexCache<T> {
                         format: idx.format,
                         start: idx.msf(),
                         length: len,
+                        control: idx.control,
                     };
 
                     tracks.push(track);

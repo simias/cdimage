@@ -96,9 +96,10 @@ impl Image for Cue {
             disc_msf: msf,
         };
 
+        let ctrl = index.control();
         let format = index.format();
 
-        let q = Q::from_qdata(qdata, format);
+        let q = Q::from_qdata_mode1(qdata, ctrl);
 
         // First let's read the sector data
         let sector = match index.private() {

@@ -51,44 +51,38 @@ impl Toc {
             0 => {
                 let t = &self.tracks[0];
 
-                let format = t.format;
-
                 let qdata = QData::Mode1TocFirstTrack {
                     first_track: t.track,
                     session_format: self.session_format(),
                     lead_in_msf,
                 };
 
-                (Q::from_qdata(qdata, format), format)
+                (Q::from_qdata_mode1(qdata, t.control), t.format)
             }
             1 => {
                 let t = self.tracks.last().unwrap();
-
-                let format = t.format;
 
                 let qdata = QData::Mode1TocLastTrack {
                     last_track: t.track,
                     lead_in_msf,
                 };
 
-                (Q::from_qdata(qdata, format), format)
+                (Q::from_qdata_mode1(qdata, t.control), t.format)
             }
             2 => {
                 // I'm not sure what the format of these sectors should be but in practice it seems
                 // to be the same type as the last sector.
                 let t = self.tracks.last().unwrap();
-                let format = t.format;
 
                 let qdata = QData::Mode1TocLeadOut {
                     lead_out_start: self.lead_out_start(),
                     lead_in_msf,
                 };
 
-                (Q::from_qdata(qdata, format), format)
+                (Q::from_qdata_mode1(qdata, t.control), t.format)
             }
             n => {
                 let t = &self.tracks[(n - 3) as usize];
-                let format = t.format;
 
                 let qdata = QData::Mode1Toc {
                     track: t.track,
@@ -96,7 +90,7 @@ impl Toc {
                     lead_in_msf,
                 };
 
-                (Q::from_qdata(qdata, format), format)
+                (Q::from_qdata_mode1(qdata, t.control), t.format)
             }
         };
 
@@ -130,16 +124,15 @@ impl Toc {
         // I generalize the concept here by always setting the format of the lead-out to the format
         // of the last track.
         let t = self.tracks.last().unwrap();
-        let format = t.format;
 
         let qdata = QData::Mode1LeadOut {
             lead_out_msf,
             disc_msf,
         };
 
-        let q = Q::from_qdata(qdata, format);
+        let q = Q::from_qdata_mode1(qdata, t.control);
 
-        Sector::empty(q, format)
+        Sector::empty(q, t.format)
     }
 
     /// Returns the MSF of the first sector in the lead-out
@@ -220,11 +213,18 @@ fn ridgeracer_toc() -> Toc {
             let start = start.parse().unwrap();
             let length = length.parse().unwrap();
 
+            let mut control = if format.is_audio() {
+                ::subchannel::AdrControl::AUDIO
+            } else {
+                ::subchannel::AdrControl::DATA
+            };
+
             Track {
                 track,
                 format,
                 start,
                 length,
+                control,
             }
         })
         .collect();
