@@ -10,10 +10,10 @@
 use std::io::SeekFrom;
 use std::path::Path;
 
-use internal::IndexCache;
-use sector::Sector;
-use subchannel::{QData, Q};
-use {CdResult, DiscPosition, Image, Toc};
+use crate::internal::IndexCache;
+use crate::sector::Sector;
+use crate::subchannel::{QData, Q};
+use crate::{CdResult, DiscPosition, Image, Toc};
 
 use self::parser::{BinSource, BinaryBlob, CueParser};
 

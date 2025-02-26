@@ -8,8 +8,8 @@
 use std::str::FromStr;
 use std::{cmp, fmt, ops};
 
-use bcd::Bcd;
-use {CdError, DiscPosition};
+use crate::bcd::Bcd;
+use crate::{CdError, DiscPosition};
 
 /// CD "minute:second:frame" timestamp, given as triplet of *BCD*
 /// encoded bytes. In this context "frame" is synonymous with

@@ -3,11 +3,11 @@
 //!
 //! Those are only useful for implementing a new image format backend.
 
+use crate::subchannel::AdrControl;
+use crate::{Bcd, CdError, CdResult, Msf, Toc, Track, TrackFormat};
 use std::cmp;
 use std::fmt;
 use std::path::PathBuf;
-use subchannel::AdrControl;
-use {Bcd, CdError, CdResult, Msf, Toc, Track, TrackFormat};
 
 /// A generic CD index implementation. Each image format can specialize it by adding its own
 /// `private` implementation.

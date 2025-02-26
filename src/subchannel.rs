@@ -30,10 +30,10 @@
 //! and [Wikipedia's article on the subject]
 //! (https://en.wikipedia.org/wiki/Compact_Disc_subcode)
 
-use bcd::Bcd;
-use msf::Msf;
+use crate::bcd::Bcd;
+use crate::msf::Msf;
 
-use {crc, CdError, CdResult, SessionFormat};
+use crate::{crc, CdError, CdResult, SessionFormat};
 
 /// Full contents of a Q subchannel frame, parsed. From this structure we should be able to
 /// regenerate the raw Subchannel Q data losslessly

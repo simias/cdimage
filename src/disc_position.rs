@@ -6,7 +6,7 @@ use std::fmt;
 use std::ops;
 use std::str::FromStr;
 
-use {CdError, CdResult, Msf};
+use crate::{CdError, CdResult, Msf};
 
 /// An enum that can describe any position on the disc, be it in the lead-in, program data or
 /// lead-out

@@ -1,6 +1,6 @@
+use crate::subchannel::{QData, Q};
+use crate::{Bcd, CdError, CdResult, Msf, Sector, SessionFormat, Track, TrackFormat};
 use std::fmt;
-use subchannel::{QData, Q};
-use {Bcd, CdError, CdResult, Msf, Sector, SessionFormat, Track, TrackFormat};
 
 /// Table of contents
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

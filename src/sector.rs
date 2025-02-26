@@ -1,10 +1,10 @@
 //! CD sector interface.
 
-use crc::crc32;
-use ecc::compute_ecc;
-use msf::Msf;
-use subchannel::Q;
-use {CdError, CdResult, TrackFormat};
+use crate::crc::crc32;
+use crate::ecc::compute_ecc;
+use crate::msf::Msf;
+use crate::subchannel::Q;
+use crate::{CdError, CdResult, TrackFormat};
 
 /// Structure containing a single sector. For better peformance it tries to be as lazy as possible
 /// and regenerate missing sector data only if it's requested.

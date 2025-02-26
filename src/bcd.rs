@@ -6,7 +6,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use CdError;
+use crate::CdError;
 
 /// A single packed BCD value in the range 0-99 (2 digits, 4bits per digit).
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

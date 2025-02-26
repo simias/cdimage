@@ -1,17 +1,17 @@
 use super::{Cue, CueTrackType, Storage, CUE_SHEET_MAX_LENGTH};
-use bcd::Bcd;
-use internal::{Index, IndexCache};
-use msf::Msf;
+use crate::bcd::Bcd;
+use crate::internal::{Index, IndexCache};
+use crate::msf::Msf;
+use crate::subchannel::AdrControl;
+use crate::CdError;
+use crate::CdResult;
+use crate::TrackFormat;
 use std::fs::{metadata, File};
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use subchannel::AdrControl;
 use zip::ZipArchive;
-use CdError;
-use CdResult;
-use TrackFormat;
 
 pub struct CueParser {
     /// Path to the cue sheet
@@ -141,7 +141,7 @@ impl CueParser {
 
             let bin_source = BinSource::Zip {
                 zip,
-                path: zip_path.to_path_buf(),
+                _path: zip_path.to_path_buf(),
             };
 
             return CueParser::do_parse(cue_path, bin_source, &cue_sheet);
@@ -632,7 +632,7 @@ pub enum BinSource {
     Fs(PathBuf),
     Zip {
         zip: ZipArchive<File>,
-        path: PathBuf,
+        _path: PathBuf,
     },
 }
 
