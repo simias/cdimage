@@ -1,19 +1,46 @@
 extern crate cdimage;
+extern crate clap;
 
 use std::path::Path;
 use std::str::FromStr;
 
 use cdimage::msf::Msf;
 use cdimage::Image;
+use clap::{Parser, ValueEnum};
+use std::io::Write;
+
+#[derive(Parser)]
+#[command(version = "1.0", author = "Your Name", about = "CD image tool")]
+struct Cli {
+    /// Path to the CD image file
+    image: String,
+
+    /// MSF sector to read (optional)
+    msf: Option<String>,
+
+    /// Output raw sector data
+    #[arg(long)]
+    raw: bool,
+
+    /// What to dump (optional)
+    #[arg(long, value_enum, default_value_t = DumpType::FullSector)]
+    dump: DumpType,
+}
+
+#[derive(ValueEnum, Default, PartialEq, Eq, Copy, Clone)]
+enum DumpType {
+    /// Dump the entire sector data
+    #[default]
+    FullSector,
+    /// Strip the headers and only dump the sector's payload
+    Payload,
+    /// Dump Q subchannel data only
+    SubQ,
+}
 
 fn main() {
-    let argv: Vec<_> = std::env::args().collect();
-
-    if argv.len() < 2 {
-        panic!("Usage: cdtool <cd-image> [msf]");
-    }
-
-    let file = Path::new(&argv[1]);
+    let args = Cli::parse();
+    let file = Path::new(&args.image);
 
     let img = if file.extension().and_then(|ext| ext.to_str()) == Some("cue") {
         cdimage::cue::Cue::new(file)
@@ -23,21 +50,30 @@ fn main() {
 
     let mut img = img.unwrap_or_else(|e| panic!("Cue error: {}", e));
 
-    println!("{:?}", img.toc());
+    if !args.raw {
+        println!("{:?}", img.toc());
+    }
 
-    if argv.len() >= 3 {
-        let msf = &argv[2];
-        let msf = Msf::from_str(msf).unwrap();
-
+    if let Some(msf_str) = args.msf {
+        let msf = Msf::from_str(&msf_str).unwrap();
         let sector = img.read_sector(msf.to_disc_position()).unwrap();
 
-        if let Ok(xa_subheader) = sector.mode2_xa_subheader() {
-            println!("XA Mode 2 form: {:?}", xa_subheader.submode().form());
+        if !args.raw {
+            if let Ok(xa_subheader) = sector.mode2_xa_subheader() {
+                println!("XA Mode 2 form: {:?}", xa_subheader.submode().form());
+            }
         }
+        let bytes = match args.dump {
+            DumpType::FullSector => sector.data_2352(),
+            DumpType::Payload => sector.mode2_xa_payload().unwrap(),
+            DumpType::SubQ => &sector.q().to_raw(),
+        };
 
-        let bytes = sector.data_2352();
-
-        hexdump(bytes);
+        if args.raw {
+            std::io::stdout().write_all(bytes).unwrap();
+        } else {
+            hexdump(bytes);
+        }
     }
 }
 

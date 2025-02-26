@@ -334,7 +334,7 @@ impl Sector {
     /// Retrieve a CD-ROM XA Mode 2 payload. Returns `CdError::BadFormat` if this is not a Mode 2
     /// sector.
     ///
-    /// For Form 1 tracks the slice returned will be either be 2048 or 2324 bytes long depending on
+    /// For Mode 2 tracks the slice returned will be either be 2048 or 2324 bytes long depending on
     /// whether the sector is form 1 or form 2 respectively.
     pub fn mode2_xa_payload(&self) -> CdResult<&[u8]> {
         let subheader = self.mode2_xa_subheader()?;
